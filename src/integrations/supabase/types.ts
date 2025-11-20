@@ -76,11 +76,41 @@ export type Database = {
         }
         Relationships: []
       }
+      message_requests: {
+        Row: {
+          created_at: string
+          from_user_id: string
+          id: string
+          status: string
+          to_user_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          from_user_id: string
+          id?: string
+          status?: string
+          to_user_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          from_user_id?: string
+          id?: string
+          status?: string
+          to_user_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           class_id: string
           content: string
           created_at: string
+          file_name: string | null
+          file_type: string | null
+          file_url: string | null
           id: string
           user_id: string
         }
@@ -88,6 +118,9 @@ export type Database = {
           class_id: string
           content: string
           created_at?: string
+          file_name?: string | null
+          file_type?: string | null
+          file_url?: string | null
           id?: string
           user_id: string
         }
@@ -95,6 +128,9 @@ export type Database = {
           class_id?: string
           content?: string
           created_at?: string
+          file_name?: string | null
+          file_type?: string | null
+          file_url?: string | null
           id?: string
           user_id?: string
         }
@@ -107,6 +143,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      private_messages: {
+        Row: {
+          content: string
+          created_at: string
+          file_url: string | null
+          from_user_id: string
+          id: string
+          to_user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          file_url?: string | null
+          from_user_id: string
+          id?: string
+          to_user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          file_url?: string | null
+          from_user_id?: string
+          id?: string
+          to_user_id?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -137,7 +200,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_class_member: {
+        Args: { _class_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

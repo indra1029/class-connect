@@ -7,6 +7,9 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import ClassRoom from "./pages/ClassRoom";
+import Profile from "./pages/Profile";
+import Messages from "./pages/Messages";
+import PrivateChat from "./pages/PrivateChat";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,7 +25,9 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/class/:classId" element={<ClassRoom />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/messages" element={<Messages />} />
+          <Route path="/chat/:userId" element={<PrivateChat />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

@@ -6,16 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Send, Users, Copy, Check } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ArrowLeft, Send, Users, Copy, Check, Paperclip, Trash2, UserCircle } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ClassMembers } from "@/components/ClassMembers";
 
 interface Message {
   id: string;
   content: string;
   created_at: string;
   user_id: string;
+  file_url: string | null;
+  file_type: string | null;
+  file_name: string | null;
   profiles: {
     full_name: string;
+    avatar_url: string | null;
   };
 }
 
@@ -36,7 +41,10 @@ const ClassRoom = () => {
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -52,8 +60,25 @@ const ClassRoom = () => {
       fetchClassData();
       fetchMessages();
       subscribeToMessages();
+      checkAdminStatus();
     }
   }, [user, classId]);
+
+  const checkAdminStatus = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("class_members")
+        .select("role")
+        .eq("class_id", classId)
+        .eq("user_id", user!.id)
+        .single();
+
+      if (error) throw error;
+      setIsAdmin(data.role === "admin");
+    } catch (error: any) {
+      console.error("Error checking admin status:", error);
+    }
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -98,16 +123,14 @@ const ClassRoom = () => {
       const userIds = [...new Set(messagesData?.map(m => m.user_id) || [])];
       const { data: profilesData } = await supabase
         .from("profiles")
-        .select("id, full_name")
+        .select("id, full_name, avatar_url")
         .in("id", userIds);
 
-      const profilesMap = new Map(profilesData?.map(p => [p.id, p.full_name]));
+      const profilesMap = new Map(profilesData?.map(p => [p.id, p]));
 
       const messagesWithProfiles = messagesData?.map(msg => ({
         ...msg,
-        profiles: {
-          full_name: profilesMap.get(msg.user_id) || "Unknown User"
-        }
+        profiles: profilesMap.get(msg.user_id) || { full_name: "Unknown User", avatar_url: null }
       })) || [];
 
       setMessages(messagesWithProfiles);
@@ -134,13 +157,13 @@ const ClassRoom = () => {
         async (payload) => {
           const { data: profileData } = await supabase
             .from("profiles")
-            .select("full_name")
+            .select("full_name, avatar_url")
             .eq("id", payload.new.user_id)
             .single();
 
           const newMsg = {
             ...payload.new,
-            profiles: profileData || { full_name: "Unknown" },
+            profiles: profileData || { full_name: "Unknown", avatar_url: null },
           } as Message;
 
           setMessages((prev) => [...prev, newMsg]);
@@ -168,6 +191,71 @@ const ClassRoom = () => {
 
       if (error) throw error;
       setNewMessage("");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      if (!e.target.files || e.target.files.length === 0) return;
+
+      const file = e.target.files[0];
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${classId}/${user!.id}/${Math.random()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("class-files")
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from("class-files").getPublicUrl(fileName);
+
+      const { error } = await supabase
+        .from("messages")
+        .insert({
+          class_id: classId,
+          user_id: user!.id,
+          content: file.name,
+          file_url: data.publicUrl,
+          file_type: file.type,
+          file_name: file.name,
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "File uploaded",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      const { error } = await supabase
+        .from("messages")
+        .delete()
+        .eq("id", messageId);
+
+      if (error) throw error;
+
+      setMessages(messages.filter(m => m.id !== messageId));
+      toast({
+        title: "Success",
+        description: "Message deleted",
+      });
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -214,16 +302,29 @@ const ClassRoom = () => {
                 )}
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={copyInviteCode}>
-              {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-              {classData?.invite_code}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowMembers(!showMembers)}>
+                <Users className="w-4 h-4 mr-2" />
+                Members
+              </Button>
+              <Button variant="outline" size="sm" onClick={copyInviteCode}>
+                {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                {classData?.invite_code}
+              </Button>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-4 py-6 flex flex-col">
-        <div className="flex-1 overflow-y-auto mb-4 space-y-4">
+      <main className="flex-1 container mx-auto px-4 py-6 flex gap-6">
+        {showMembers && (
+          <div className="w-80 flex-shrink-0">
+            <ClassMembers classId={classId!} user={user!} isAdmin={isAdmin} />
+          </div>
+        )}
+        
+        <div className="flex-1 flex flex-col">
+          <div className="flex-1 overflow-y-auto mb-4 space-y-4">
           {messages.length === 0 ? (
             <Card className="text-center py-12">
               <CardContent>
@@ -240,9 +341,10 @@ const ClassRoom = () => {
               return (
                 <div
                   key={message.id}
-                  className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}
+                  className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""} group`}
                 >
                   <Avatar className="w-8 h-8 flex-shrink-0">
+                    <AvatarImage src={message.profiles.avatar_url || ""} />
                     <AvatarFallback className="bg-gradient-hero text-white text-xs">
                       {message.profiles.full_name.charAt(0).toUpperCase()}
                     </AvatarFallback>
@@ -251,14 +353,38 @@ const ClassRoom = () => {
                     <span className="text-xs text-muted-foreground mb-1">
                       {message.profiles.full_name}
                     </span>
-                    <div
-                      className={`rounded-2xl px-4 py-2 ${
-                        isOwn
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-foreground"
-                      }`}
-                    >
-                      <p className="text-sm break-words">{message.content}</p>
+                    <div className="relative">
+                      <div
+                        className={`rounded-2xl px-4 py-2 ${
+                          isOwn
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-foreground"
+                        }`}
+                      >
+                        {message.file_url ? (
+                          <a
+                            href={message.file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline flex items-center gap-2"
+                          >
+                            <Paperclip className="w-4 h-4" />
+                            {message.file_name || message.content}
+                          </a>
+                        ) : (
+                          <p className="text-sm break-words">{message.content}</p>
+                        )}
+                      </div>
+                      {isAdmin && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="absolute -right-10 top-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleDeleteMessage(message.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                     <span className="text-xs text-muted-foreground mt-1">
                       {new Date(message.created_at).toLocaleTimeString([], {
@@ -271,20 +397,35 @@ const ClassRoom = () => {
               );
             })
           )}
-          <div ref={messagesEndRef} />
-        </div>
+            <div ref={messagesEndRef} />
+          </div>
 
-        <form onSubmit={handleSendMessage} className="flex gap-2">
-          <Input
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type a message..."
-            className="flex-1"
-          />
-          <Button type="submit" size="icon">
-            <Send className="w-4 h-4" />
-          </Button>
-        </form>
+          <form onSubmit={handleSendMessage} className="flex gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip className="w-4 h-4" />
+            </Button>
+            <Input
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Type a message..."
+              className="flex-1"
+            />
+            <Button type="submit" size="icon">
+              <Send className="w-4 h-4" />
+            </Button>
+          </form>
+        </div>
       </main>
     </div>
   );

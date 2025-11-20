@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { GraduationCap, LogOut, Plus, Users } from "lucide-react";
+import { GraduationCap, LogOut, Plus, Users, MessageSquare, UserCircle } from "lucide-react";
 
 interface Class {
   id: string;
@@ -169,10 +169,20 @@ const Dashboard = () => {
               ClassChat
             </h1>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleSignOut}>
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate("/profile")}>
+              <UserCircle className="w-4 h-4 mr-2" />
+              Profile
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate("/messages")}>
+              <MessageSquare className="w-4 h-4 mr-2" />
+              Messages
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleSignOut}>
+              <LogOut className="w-4 h-4 mr-2" />
+              Sign Out
+            </Button>
+          </div>
         </div>
       </header>
 
