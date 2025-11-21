@@ -14,6 +14,93 @@ export type Database = {
   }
   public: {
     Tables: {
+      announcements: {
+        Row: {
+          class_id: string
+          content: string
+          created_at: string
+          id: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          class_id: string
+          content: string
+          created_at?: string
+          id?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          class_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "announcements_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "class_analytics"
+            referencedColumns: ["class_id"]
+          },
+          {
+            foreignKeyName: "announcements_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_events: {
+        Row: {
+          class_id: string
+          created_at: string
+          description: string | null
+          event_date: string
+          id: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          description?: string | null
+          event_date: string
+          id?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          description?: string | null
+          event_date?: string
+          id?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_events_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "class_analytics"
+            referencedColumns: ["class_id"]
+          },
+          {
+            foreignKeyName: "calendar_events_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       class_members: {
         Row: {
           class_id: string
@@ -190,6 +277,128 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      poll_responses: {
+        Row: {
+          created_at: string
+          id: string
+          option_index: number
+          poll_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          option_index: number
+          poll_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          option_index?: number
+          poll_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "poll_responses_poll_id_fkey"
+            columns: ["poll_id"]
+            isOneToOne: false
+            referencedRelation: "polls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      polls: {
+        Row: {
+          class_id: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          options: Json
+          question: string
+          user_id: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          options: Json
+          question: string
+          user_id: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          options?: Json
+          question?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "polls_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "class_analytics"
+            referencedColumns: ["class_id"]
+          },
+          {
+            foreignKeyName: "polls_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      presentations: {
+        Row: {
+          class_id: string
+          created_at: string
+          file_name: string
+          file_url: string
+          id: string
+          is_active: boolean
+          user_id: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          file_name: string
+          file_url: string
+          id?: string
+          is_active?: boolean
+          user_id: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          file_name?: string
+          file_url?: string
+          id?: string
+          is_active?: boolean
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "presentations_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "class_analytics"
+            referencedColumns: ["class_id"]
+          },
+          {
+            foreignKeyName: "presentations_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       private_messages: {
         Row: {

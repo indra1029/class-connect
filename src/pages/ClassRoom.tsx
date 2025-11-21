@@ -6,11 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Send, Users, Copy, Check, Paperclip, Trash2, UserCircle, Video, Smile } from "lucide-react";
+import { ArrowLeft, Send, Users, Copy, Check, Paperclip, Trash2, UserCircle, Video, Smile, MessageSquare, Megaphone, Presentation, BarChart3, Calendar as CalendarIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ClassMembers } from "@/components/ClassMembers";
 import VideoCall from "@/components/VideoCall";
 import EmojiPicker from "@/components/EmojiPicker";
+import { Announcements } from "@/components/Announcements";
+import { PresentationViewer } from "@/components/PresentationViewer";
+import { Polls } from "@/components/Polls";
+import { ClassCalendar } from "@/components/ClassCalendar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Message {
   id: string;
@@ -330,8 +335,33 @@ const ClassRoom = () => {
           </div>
         )}
         
-        <div className="flex-1 flex flex-col">
-          <div className="flex-1 overflow-y-auto mb-4 space-y-4">
+        <div className="flex-1 flex flex-col max-w-6xl">
+          <Tabs defaultValue="chat" className="flex-1 flex flex-col">
+            <TabsList className="grid w-full grid-cols-5 mb-4">
+              <TabsTrigger value="chat" className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4" />
+                Chat
+              </TabsTrigger>
+              <TabsTrigger value="announcements" className="flex items-center gap-2">
+                <Megaphone className="w-4 h-4" />
+                Announcements
+              </TabsTrigger>
+              <TabsTrigger value="presentations" className="flex items-center gap-2">
+                <Presentation className="w-4 h-4" />
+                Presentations
+              </TabsTrigger>
+              <TabsTrigger value="polls" className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" />
+                Polls
+              </TabsTrigger>
+              <TabsTrigger value="calendar" className="flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4" />
+                Calendar
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="chat" className="flex-1 flex flex-col mt-0">
+              <div className="flex-1 overflow-y-auto mb-4 space-y-4">
           {messages.length === 0 ? (
             <Card className="text-center py-12">
               <CardContent>
@@ -404,39 +434,57 @@ const ClassRoom = () => {
               );
             })
           )}
-            <div ref={messagesEndRef} />
-          </div>
+                <div ref={messagesEndRef} />
+              </div>
 
-          <form onSubmit={handleSendMessage} className="flex gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Paperclip className="w-4 h-4" />
-            </Button>
-            <EmojiPicker onEmojiSelect={(emoji) => setNewMessage((prev) => prev + emoji)}>
-              <Button type="button" size="icon" variant="outline">
-                <Smile className="w-4 h-4" />
-              </Button>
-            </EmojiPicker>
-            <Input
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1"
-            />
-            <Button type="submit" size="icon">
-              <Send className="w-4 h-4" />
-            </Button>
-          </form>
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Paperclip className="w-4 h-4" />
+                </Button>
+                <EmojiPicker onEmojiSelect={(emoji) => setNewMessage((prev) => prev + emoji)}>
+                  <Button type="button" size="icon" variant="outline">
+                    <Smile className="w-4 h-4" />
+                  </Button>
+                </EmojiPicker>
+                <Input
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Type a message..."
+                  className="flex-1"
+                />
+                <Button type="submit" size="icon">
+                  <Send className="w-4 h-4" />
+                </Button>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="announcements" className="flex-1 overflow-y-auto">
+              <Announcements classId={classId!} isAdmin={isAdmin} />
+            </TabsContent>
+
+            <TabsContent value="presentations" className="flex-1 overflow-y-auto">
+              <PresentationViewer classId={classId!} isAdmin={isAdmin} />
+            </TabsContent>
+
+            <TabsContent value="polls" className="flex-1 overflow-y-auto">
+              <Polls classId={classId!} />
+            </TabsContent>
+
+            <TabsContent value="calendar" className="flex-1 overflow-y-auto">
+              <ClassCalendar classId={classId!} />
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
 
