@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Send, Users, Copy, Check, Paperclip, Trash2, UserCircle } from "lucide-react";
+import { ArrowLeft, Send, Users, Copy, Check, Paperclip, Trash2, UserCircle, Video, Smile } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ClassMembers } from "@/components/ClassMembers";
+import VideoCall from "@/components/VideoCall";
+import EmojiPicker from "@/components/EmojiPicker";
 
 interface Message {
   id: string;
@@ -43,6 +45,7 @@ const ClassRoom = () => {
   const [copied, setCopied] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
+  const [showVideoCall, setShowVideoCall] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -303,6 +306,10 @@ const ClassRoom = () => {
               </div>
             </div>
             <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowVideoCall(true)}>
+                <Video className="w-4 h-4 mr-2" />
+                Call
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setShowMembers(!showMembers)}>
                 <Users className="w-4 h-4 mr-2" />
                 Members
@@ -415,6 +422,11 @@ const ClassRoom = () => {
             >
               <Paperclip className="w-4 h-4" />
             </Button>
+            <EmojiPicker onEmojiSelect={(emoji) => setNewMessage((prev) => prev + emoji)}>
+              <Button type="button" size="icon" variant="outline">
+                <Smile className="w-4 h-4" />
+              </Button>
+            </EmojiPicker>
             <Input
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
@@ -427,6 +439,10 @@ const ClassRoom = () => {
           </form>
         </div>
       </main>
+
+      {showVideoCall && user && (
+        <VideoCall classId={classId!} userId={user.id} />
+      )}
     </div>
   );
 };
