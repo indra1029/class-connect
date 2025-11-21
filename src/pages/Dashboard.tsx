@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { GraduationCap, LogOut, Plus, Users, MessageSquare, UserCircle } from "lucide-react";
+import { GraduationCap, LogOut, Plus, Users, MessageSquare, UserCircle, BarChart3 } from "lucide-react";
+import NotificationBell from "@/components/NotificationBell";
 
 interface Class {
   id: string;
@@ -110,16 +111,17 @@ const Dashboard = () => {
 
     try {
       const { data: classData, error: classError } = await supabase
-        .from("classes")
-        .select("id")
-        .eq("invite_code", inviteCode)
-        .single();
+        .rpc("get_class_by_invite_code", { _invite_code: inviteCode });
 
-      if (classError) throw new Error("Invalid invite code");
+      if (classError || !classData || classData.length === 0) {
+        throw new Error("Invalid invite code");
+      }
+
+      const classId = classData[0].class_id;
 
       const { error: memberError } = await supabase
         .from("class_members")
-        .insert({ class_id: classData.id, user_id: user!.id });
+        .insert({ class_id: classId, user_id: user!.id });
 
       if (memberError) {
         if (memberError.code === "23505") {
@@ -169,7 +171,8 @@ const Dashboard = () => {
               ClassChat
             </h1>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {user && <NotificationBell userId={user.id} />}
             <Button variant="outline" size="sm" onClick={() => navigate("/profile")}>
               <UserCircle className="w-4 h-4 mr-2" />
               Profile
@@ -177,6 +180,10 @@ const Dashboard = () => {
             <Button variant="outline" size="sm" onClick={() => navigate("/messages")}>
               <MessageSquare className="w-4 h-4 mr-2" />
               Messages
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate("/analytics")}>
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Analytics
             </Button>
             <Button variant="ghost" size="sm" onClick={handleSignOut}>
               <LogOut className="w-4 h-4 mr-2" />

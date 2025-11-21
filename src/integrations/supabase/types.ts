@@ -41,6 +41,13 @@ export type Database = {
             foreignKeyName: "class_members_class_id_fkey"
             columns: ["class_id"]
             isOneToOne: false
+            referencedRelation: "class_analytics"
+            referencedColumns: ["class_id"]
+          },
+          {
+            foreignKeyName: "class_members_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
             referencedRelation: "classes"
             referencedColumns: ["id"]
           },
@@ -139,10 +146,50 @@ export type Database = {
             foreignKeyName: "messages_class_id_fkey"
             columns: ["class_id"]
             isOneToOne: false
+            referencedRelation: "class_analytics"
+            referencedColumns: ["class_id"]
+          },
+          {
+            foreignKeyName: "messages_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
             referencedRelation: "classes"
             referencedColumns: ["id"]
           },
         ]
+      }
+      notifications: {
+        Row: {
+          created_at: string | null
+          id: string
+          link: string | null
+          message: string
+          read: boolean | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          link?: string | null
+          message: string
+          read?: boolean | null
+          title: string
+          type?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          link?: string | null
+          message?: string
+          read?: boolean | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       private_messages: {
         Row: {
@@ -197,9 +244,25 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      class_analytics: {
+        Row: {
+          class_id: string | null
+          class_name: string | null
+          created_at: string | null
+          last_message_at: string | null
+          member_count: number | null
+          message_count: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      get_class_by_invite_code: {
+        Args: { _invite_code: string }
+        Returns: {
+          class_id: string
+        }[]
+      }
       is_class_member: {
         Args: { _class_id: string; _user_id: string }
         Returns: boolean

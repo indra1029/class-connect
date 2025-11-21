@@ -1,10 +1,10 @@
 {
-  "name": "ClassChat",
+  "name": "ClassChat - Modern Class Communication",
   "short_name": "ClassChat",
-  "description": "Modern classroom communication platform",
+  "description": "Connect, collaborate, and communicate with your classmates. Video calls, file sharing, and private messaging made easy.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "background_color": "#0a0f1e",
   "theme_color": "#0EA5E9",
   "orientation": "portrait",
   "icons": [
@@ -20,5 +20,7 @@
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "categories": ["education", "social", "communication"],
+  "screenshots": []
 }
