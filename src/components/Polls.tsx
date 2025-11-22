@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, X, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
+import { z } from "zod";
 
 interface Poll {
   id: string;
@@ -104,31 +105,57 @@ export const Polls = ({ classId }: PollsProps) => {
     setResponses(data || []);
   };
 
+  const pollSchema = z.object({
+    question: z.string()
+      .trim()
+      .min(1, "Question is required")
+      .max(300, "Question must be less than 300 characters")
+      .regex(/^[a-zA-Z0-9\s\-&.!?,()]+$/, "Question contains invalid characters"),
+    options: z.array(
+      z.string()
+        .trim()
+        .min(1, "Option cannot be empty")
+        .max(100, "Option must be less than 100 characters")
+    )
+      .min(2, "At least 2 options are required")
+      .max(6, "Maximum 6 options allowed")
+  });
+
   const handleCreatePoll = async () => {
-    if (!question.trim() || options.filter((o) => o.trim()).length < 2) {
-      toast.error("Please provide a question and at least 2 options");
-      return;
+    try {
+      const validOptions = options.filter((o) => o.trim());
+
+      const validated = pollSchema.parse({
+        question,
+        options: validOptions
+      });
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase.from("polls").insert({
+        class_id: classId,
+        user_id: user.id,
+        question: validated.question,
+        options: validated.options,
+      });
+
+      if (error) {
+        toast.error("Failed to create poll");
+        return;
+      }
+
+      toast.success("Poll created");
+      setQuestion("");
+      setOptions(["", ""]);
+      setShowForm(false);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.errors[0].message);
+      } else {
+        toast.error("Failed to create poll");
+      }
     }
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { error } = await supabase.from("polls").insert({
-      class_id: classId,
-      user_id: user.id,
-      question: question.trim(),
-      options: options.filter((o) => o.trim()),
-    });
-
-    if (error) {
-      toast.error("Failed to create poll");
-      return;
-    }
-
-    toast.success("Poll created");
-    setQuestion("");
-    setOptions(["", ""]);
-    setShowForm(false);
   };
 
   const handleVote = async (pollId: string, optionIndex: number) => {
