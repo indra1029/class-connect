@@ -5,10 +5,11 @@ import { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Users, MessageSquare, Building2 } from "lucide-react";
+import { ArrowLeft, Users, MessageSquare, Building2, ShieldCheck, AlertCircle } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface Admin {
   user_id: string;
@@ -35,6 +36,9 @@ const AdminDirectory = () => {
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [classes, setClasses] = useState<CollegeClass[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isVerified, setIsVerified] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [userCollege, setUserCollege] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -47,10 +51,61 @@ const AdminDirectory = () => {
 
   useEffect(() => {
     if (user) {
+      checkVerification();
       fetchAdmins();
       fetchCollegeClasses();
     }
   }, [user]);
+
+  const checkVerification = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("college_verified, college")
+        .eq("id", user!.id)
+        .single();
+
+      if (error) throw error;
+      setIsVerified(data.college_verified || false);
+      setUserCollege(data.college);
+    } catch (error: any) {
+      console.error("Error checking verification:", error);
+    }
+  };
+
+  const handleRequestVerification = async () => {
+    setVerifying(true);
+    try {
+      const { data, error } = await supabase
+        .rpc("request_college_verification", { _user_id: user!.id });
+
+      if (error) throw error;
+
+      if (data) {
+        toast({
+          title: "Verification Successful!",
+          description: "Your college affiliation has been verified based on your email domain.",
+        });
+        setIsVerified(true);
+        fetchAdmins();
+        fetchCollegeClasses();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Verification Failed",
+          description: "Your email domain does not match your college. Please ensure your email is from your college domain (e.g., @college.edu) and that your college name is correctly set in your profile.",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const fetchAdmins = async () => {
     try {
@@ -132,10 +187,44 @@ const AdminDirectory = () => {
 
       <main className="container mx-auto px-4 py-8 max-w-6xl">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-foreground">CR Network</h2>
-          <p className="text-muted-foreground mt-1">
-            Connect with other class representatives in your college
-          </p>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-3xl font-bold text-foreground">CR Network</h2>
+              <p className="text-muted-foreground mt-1">
+                Connect with other class representatives in your college
+              </p>
+            </div>
+            {isVerified && (
+              <Badge variant="default" className="flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" />
+                Verified
+              </Badge>
+            )}
+          </div>
+
+          {!isVerified && (
+            <Alert className="mb-6">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>College Verification Required</AlertTitle>
+              <AlertDescription className="mt-2">
+                <p className="mb-3">
+                  To access the CR Network and protect the privacy of your college community, you need to verify your college affiliation. 
+                  Verification is done automatically by matching your email domain with your college.
+                </p>
+                <div className="space-y-2 text-sm mb-4">
+                  <p><strong>Requirements:</strong></p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li>Your college name must be set in your profile</li>
+                    <li>Your email must be from your college domain (e.g., @{userCollege ? userCollege.toLowerCase().replace(/\s+/g, '') + '.edu' : 'college.edu'})</li>
+                    <li>You must be a class creator (have created at least one class)</li>
+                  </ul>
+                </div>
+                <Button onClick={handleRequestVerification} disabled={verifying}>
+                  {verifying ? "Verifying..." : "Verify College Affiliation"}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
 
         <Tabs defaultValue="admins" className="w-full">
@@ -151,13 +240,23 @@ const AdminDirectory = () => {
           </TabsList>
 
           <TabsContent value="admins">
-            {admins.length === 0 ? (
+            {!isVerified ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <ShieldCheck className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                  <CardTitle className="mb-2">Verification Required</CardTitle>
+                  <CardDescription>
+                    Verify your college affiliation to access the CR directory
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            ) : admins.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <Users className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
                   <CardTitle className="mb-2">No other CRs found</CardTitle>
                   <CardDescription>
-                    Make sure you and other CRs have set your college name in your profile
+                    No other verified class representatives from your college yet
                   </CardDescription>
                 </CardContent>
               </Card>
@@ -200,13 +299,23 @@ const AdminDirectory = () => {
           </TabsContent>
 
           <TabsContent value="classes">
-            {classes.length === 0 ? (
+            {!isVerified ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <ShieldCheck className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                  <CardTitle className="mb-2">Verification Required</CardTitle>
+                  <CardDescription>
+                    Verify your college affiliation to view all college classes
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            ) : classes.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <Building2 className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
                   <CardTitle className="mb-2">No classes found</CardTitle>
                   <CardDescription>
-                    Classes will appear here once CRs set their college name
+                    No classes from your college yet
                   </CardDescription>
                 </CardContent>
               </Card>

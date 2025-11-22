@@ -464,26 +464,32 @@ export type Database = {
         Row: {
           avatar_url: string | null
           college: string | null
+          college_verified: boolean | null
           created_at: string
           full_name: string
           id: string
           updated_at: string
+          verified_college: string | null
         }
         Insert: {
           avatar_url?: string | null
           college?: string | null
+          college_verified?: boolean | null
           created_at?: string
           full_name: string
           id: string
           updated_at?: string
+          verified_college?: string | null
         }
         Update: {
           avatar_url?: string | null
           college?: string | null
+          college_verified?: boolean | null
           created_at?: string
           full_name?: string
           id?: string
           updated_at?: string
+          verified_college?: string | null
         }
         Relationships: []
       }
@@ -646,6 +652,7 @@ export type Database = {
           member_count: number
         }[]
       }
+      get_user_email_domain: { Args: { _user_id: string }; Returns: string }
       has_class_role: {
         Args: {
           _class_id: string
@@ -656,6 +663,14 @@ export type Database = {
       }
       is_class_member: {
         Args: { _class_id: string; _user_id: string }
+        Returns: boolean
+      }
+      request_college_verification: {
+        Args: { _user_id: string }
+        Returns: boolean
+      }
+      verify_college_affiliation: {
+        Args: { _user_id: string }
         Returns: boolean
       }
     }
