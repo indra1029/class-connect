@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Megaphone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { z } from "zod";
 
 interface Announcement {
   id: string;
@@ -78,28 +79,51 @@ export const Announcements = ({ classId, isAdmin }: AnnouncementsProps) => {
     setAnnouncements(announcementsWithProfiles);
   };
 
+  const announcementSchema = z.object({
+    title: z.string()
+      .trim()
+      .min(1, "Title is required")
+      .max(200, "Title must be less than 200 characters")
+      .regex(/^[a-zA-Z0-9\s\-&.!?,]+$/, "Title contains invalid characters"),
+    content: z.string()
+      .trim()
+      .min(1, "Content is required")
+      .max(5000, "Content must be less than 5000 characters")
+  });
+
   const handleCreate = async () => {
-    if (!title.trim() || !content.trim()) return;
+    try {
+      const validated = announcementSchema.parse({
+        title,
+        content
+      });
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    const { error } = await supabase.from("announcements").insert({
-      class_id: classId,
-      user_id: user.id,
-      title: title.trim(),
-      content: content.trim(),
-    });
+      const { error } = await supabase.from("announcements").insert({
+        class_id: classId,
+        user_id: user.id,
+        title: validated.title,
+        content: validated.content,
+      });
 
-    if (error) {
-      toast.error("Failed to create announcement");
-      return;
+      if (error) {
+        toast.error("Failed to create announcement");
+        return;
+      }
+
+      toast.success("Announcement created");
+      setTitle("");
+      setContent("");
+      setShowForm(false);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.errors[0].message);
+      } else {
+        toast.error("Failed to create announcement");
+      }
     }
-
-    toast.success("Announcement created");
-    setTitle("");
-    setContent("");
-    setShowForm(false);
   };
 
   const handleDelete = async (id: string) => {

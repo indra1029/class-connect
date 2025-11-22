@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { z } from "zod";
 
 interface CalendarEvent {
   id: string;
@@ -89,37 +90,66 @@ export const ClassCalendar = ({ classId }: ClassCalendarProps) => {
     setEvents(eventsWithProfiles);
   };
 
+  const eventSchema = z.object({
+    title: z.string()
+      .trim()
+      .min(1, "Title is required")
+      .max(200, "Title must be less than 200 characters")
+      .regex(/^[a-zA-Z0-9\s\-&.!?,()]+$/, "Title contains invalid characters"),
+    description: z.string()
+      .trim()
+      .max(1000, "Description must be less than 1000 characters")
+      .optional(),
+    eventDate: z.date({
+      required_error: "Event date is required"
+    })
+  });
+
   const handleCreateEvent = async () => {
-    if (!title.trim() || !selectedDate) {
-      toast.error("Please provide title and date");
-      return;
+    try {
+      if (!selectedDate) {
+        toast.error("Please select a date");
+        return;
+      }
+
+      const validated = eventSchema.parse({
+        title,
+        description: description || undefined,
+        eventDate: selectedDate
+      });
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const [hours, minutes] = selectedTime.split(":");
+      const eventDateTime = new Date(validated.eventDate);
+      eventDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+
+      const { error } = await supabase.from("calendar_events").insert({
+        class_id: classId,
+        user_id: user.id,
+        title: validated.title,
+        description: validated.description || null,
+        event_date: eventDateTime.toISOString(),
+      });
+
+      if (error) {
+        toast.error("Failed to create event");
+        return;
+      }
+
+      toast.success("Event created");
+      setTitle("");
+      setDescription("");
+      setSelectedTime("12:00");
+      setShowForm(false);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.errors[0].message);
+      } else {
+        toast.error("Failed to create event");
+      }
     }
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const [hours, minutes] = selectedTime.split(":");
-    const eventDateTime = new Date(selectedDate);
-    eventDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-
-    const { error } = await supabase.from("calendar_events").insert({
-      class_id: classId,
-      user_id: user.id,
-      title: title.trim(),
-      description: description.trim() || null,
-      event_date: eventDateTime.toISOString(),
-    });
-
-    if (error) {
-      toast.error("Failed to create event");
-      return;
-    }
-
-    toast.success("Event created");
-    setTitle("");
-    setDescription("");
-    setSelectedTime("12:00");
-    setShowForm(false);
   };
 
   const handleDeleteEvent = async (id: string) => {
