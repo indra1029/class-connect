@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_messages: {
+        Row: {
+          content: string
+          created_at: string
+          file_url: string | null
+          from_user_id: string
+          id: string
+          read: boolean | null
+          to_user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          file_url?: string | null
+          from_user_id: string
+          id?: string
+          read?: boolean | null
+          to_user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          file_url?: string | null
+          from_user_id?: string
+          id?: string
+          read?: boolean | null
+          to_user_id?: string
+        }
+        Relationships: []
+      }
       announcements: {
         Row: {
           class_id: string
@@ -142,6 +172,7 @@ export type Database = {
       }
       classes: {
         Row: {
+          college: string | null
           created_at: string
           created_by: string
           description: string | null
@@ -151,6 +182,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          college?: string | null
           created_at?: string
           created_by: string
           description?: string | null
@@ -160,6 +192,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          college?: string | null
           created_at?: string
           created_by?: string
           description?: string | null
@@ -430,6 +463,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          college: string | null
           created_at: string
           full_name: string
           id: string
@@ -437,6 +471,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          college?: string | null
           created_at?: string
           full_name: string
           id: string
@@ -444,12 +479,90 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          college?: string | null
           created_at?: string
           full_name?: string
           id?: string
           updated_at?: string
         }
         Relationships: []
+      }
+      video_call_participants: {
+        Row: {
+          id: string
+          is_active: boolean | null
+          joined_at: string
+          left_at: string | null
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          is_active?: boolean | null
+          joined_at?: string
+          left_at?: string | null
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          is_active?: boolean | null
+          joined_at?: string
+          left_at?: string | null
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_call_participants_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "video_call_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_call_sessions: {
+        Row: {
+          class_id: string
+          ended_at: string | null
+          id: string
+          is_active: boolean | null
+          started_at: string
+          started_by: string
+        }
+        Insert: {
+          class_id: string
+          ended_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          started_at?: string
+          started_by: string
+        }
+        Update: {
+          class_id?: string
+          ended_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          started_at?: string
+          started_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_call_sessions_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "class_analytics"
+            referencedColumns: ["class_id"]
+          },
+          {
+            foreignKeyName: "video_call_sessions_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -470,6 +583,28 @@ export type Database = {
         Args: { _invite_code: string }
         Returns: {
           class_id: string
+        }[]
+      }
+      get_college_admins: {
+        Args: { _user_id: string }
+        Returns: {
+          avatar_url: string
+          class_count: number
+          college: string
+          full_name: string
+          user_id: string
+        }[]
+      }
+      get_college_classes: {
+        Args: { _user_id: string }
+        Returns: {
+          class_id: string
+          class_name: string
+          created_at: string
+          created_by: string
+          creator_name: string
+          description: string
+          member_count: number
         }[]
       }
       is_class_member: {

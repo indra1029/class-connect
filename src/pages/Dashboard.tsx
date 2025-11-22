@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { GraduationCap, LogOut, Plus, Users, MessageSquare, UserCircle, BarChart3 } from "lucide-react";
+import { GraduationCap, LogOut, Plus, Users, MessageSquare, UserCircle, BarChart3, Network } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
 
 interface Class {
@@ -29,6 +29,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
+  const [isClassCreator, setIsClassCreator] = useState(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -52,8 +53,24 @@ const Dashboard = () => {
   useEffect(() => {
     if (user) {
       fetchClasses();
+      checkIfClassCreator();
     }
   }, [user]);
+
+  const checkIfClassCreator = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("classes")
+        .select("id")
+        .eq("created_by", user!.id)
+        .limit(1);
+      
+      if (error) throw error;
+      setIsClassCreator(data && data.length > 0);
+    } catch (error) {
+      console.error("Error checking creator status:", error);
+    }
+  };
 
   const fetchClasses = async () => {
     try {
@@ -82,9 +99,21 @@ const Dashboard = () => {
     const description = formData.get("description") as string;
 
     try {
+      // Get user's college
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("college")
+        .eq("id", user!.id)
+        .single();
+
       const { error } = await supabase
         .from("classes")
-        .insert({ name, description, created_by: user!.id });
+        .insert({ 
+          name, 
+          description, 
+          created_by: user!.id,
+          college: profileData?.college 
+        });
 
       if (error) throw error;
 
@@ -181,6 +210,12 @@ const Dashboard = () => {
               <MessageSquare className="w-4 h-4 mr-2" />
               Messages
             </Button>
+            {isClassCreator && (
+              <Button variant="outline" size="sm" onClick={() => navigate("/admin-directory")}>
+                <Network className="w-4 h-4 mr-2" />
+                CR Network
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => navigate("/analytics")}>
               <BarChart3 className="w-4 h-4 mr-2" />
               Analytics

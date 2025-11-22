@@ -15,6 +15,7 @@ const Profile = () => {
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [fullName, setFullName] = useState("");
+  const [college, setCollege] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -44,6 +45,7 @@ const Profile = () => {
 
       if (error) throw error;
       setFullName(data.full_name || "");
+      setCollege(data.college || "");
       setAvatarUrl(data.avatar_url || "");
     } catch (error: any) {
       toast({
@@ -104,7 +106,7 @@ const Profile = () => {
     try {
       const { error } = await supabase
         .from("profiles")
-        .update({ full_name: fullName })
+        .update({ full_name: fullName, college: college })
         .eq("id", user!.id);
 
       if (error) throw error;
@@ -178,6 +180,15 @@ const Profile = () => {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Enter your full name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="college">College Name</Label>
+                <Input
+                  id="college"
+                  value={college}
+                  onChange={(e) => setCollege(e.target.value)}
+                  placeholder="Enter your college name"
                 />
               </div>
               <Button type="submit" className="w-full">

@@ -11,6 +11,7 @@ import Profile from "./pages/Profile";
 import Messages from "./pages/Messages";
 import PrivateChat from "./pages/PrivateChat";
 import Analytics from "./pages/Analytics";
+import AdminDirectory from "./pages/AdminDirectory";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/messages" element={<Messages />} />
           <Route path="/chat/:userId" element={<PrivateChat />} />
           <Route path="/analytics" element={<Analytics />} />
+          <Route path="/admin-directory" element={<AdminDirectory />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
