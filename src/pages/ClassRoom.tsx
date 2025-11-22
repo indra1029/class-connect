@@ -10,6 +10,7 @@ import { ArrowLeft, Send, Users, Copy, Check, Paperclip, Trash2, UserCircle, Vid
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ClassMembers } from "@/components/ClassMembers";
 import VideoCall from "@/components/VideoCall";
+import MultiUserVideoCall from "@/components/MultiUserVideoCall";
 import EmojiPicker from "@/components/EmojiPicker";
 import { Announcements } from "@/components/Announcements";
 import { PresentationViewer } from "@/components/PresentationViewer";
@@ -213,8 +214,12 @@ const ClassRoom = () => {
       if (!e.target.files || e.target.files.length === 0) return;
 
       const file = e.target.files[0];
-      const fileExt = file.name.split(".").pop();
+      const fileExt = file.name.split(".").pop()?.toLowerCase();
       const fileName = `${classId}/${user!.id}/${Math.random()}.${fileExt}`;
+
+      // Check if it's a presentation file
+      const presentationTypes = ['pdf', 'ppt', 'pptx', 'doc', 'docx'];
+      const isPresentationFile = presentationTypes.includes(fileExt || '');
 
       const { error: uploadError } = await supabase.storage
         .from("class-files")
@@ -224,23 +229,44 @@ const ClassRoom = () => {
 
       const { data } = supabase.storage.from("class-files").getPublicUrl(fileName);
 
-      const { error } = await supabase
-        .from("messages")
-        .insert({
-          class_id: classId,
-          user_id: user!.id,
-          content: file.name,
-          file_url: data.publicUrl,
-          file_type: file.type,
-          file_name: file.name,
+      if (isPresentationFile) {
+        // Add to presentations table for admin
+        const { error: presentationError } = await supabase
+          .from("presentations")
+          .insert({
+            class_id: classId,
+            user_id: user!.id,
+            file_url: data.publicUrl,
+            file_name: file.name,
+            is_active: false,
+          });
+
+        if (presentationError) throw presentationError;
+
+        toast({
+          title: "Success",
+          description: "Presentation uploaded to Presentations tab",
         });
+      } else {
+        // Regular file - add to messages
+        const { error } = await supabase
+          .from("messages")
+          .insert({
+            class_id: classId,
+            user_id: user!.id,
+            content: file.name,
+            file_url: data.publicUrl,
+            file_type: file.type,
+            file_name: file.name,
+          });
 
-      if (error) throw error;
+        if (error) throw error;
 
-      toast({
-        title: "Success",
-        description: "File uploaded",
-      });
+        toast({
+          title: "Success",
+          description: "File uploaded",
+        });
+      }
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -489,7 +515,11 @@ const ClassRoom = () => {
       </main>
 
       {showVideoCall && user && (
-        <VideoCall classId={classId!} userId={user.id} />
+        <MultiUserVideoCall 
+          classId={classId!} 
+          userId={user.id} 
+          onClose={() => setShowVideoCall(false)}
+        />
       )}
     </div>
   );
