@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Upload } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { z } from "zod";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -101,12 +102,31 @@ const Profile = () => {
     }
   };
 
+  const profileSchema = z.object({
+    full_name: z.string()
+      .trim()
+      .min(1, "Name required")
+      .max(100, "Name too long")
+      .regex(/^[a-zA-Z\s]+$/, "Only letters and spaces allowed"),
+    college: z.string()
+      .trim()
+      .min(3, "College name too short")
+      .max(100, "College name too long")
+      .regex(/^[a-zA-Z0-9\s.,'-]+$/, "Invalid characters in college name")
+      .optional()
+  });
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const validated = profileSchema.parse({
+        full_name: fullName,
+        college: college || undefined
+      });
+
       const { error } = await supabase
         .from("profiles")
-        .update({ full_name: fullName, college: college })
+        .update(validated)
         .eq("id", user!.id);
 
       if (error) throw error;
@@ -116,11 +136,19 @@ const Profile = () => {
         description: "Profile updated successfully",
       });
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      if (error instanceof z.ZodError) {
+        toast({
+          variant: "destructive",
+          title: "Validation Error",
+          description: error.errors[0].message,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: error.message,
+        });
+      }
     }
   };
 
