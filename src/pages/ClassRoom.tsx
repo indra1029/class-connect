@@ -76,7 +76,7 @@ const ClassRoom = () => {
   const checkAdminStatus = async () => {
     try {
       const { data, error } = await supabase
-        .from("class_members")
+        .from("user_roles")
         .select("role")
         .eq("class_id", classId)
         .eq("user_id", user!.id)

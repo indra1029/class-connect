@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { GraduationCap, LogOut, Plus, Users, MessageSquare, UserCircle, BarChart3, Network } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
+import { z } from "zod";
 
 interface Class {
   id: string;
@@ -60,9 +61,10 @@ const Dashboard = () => {
   const checkIfClassCreator = async () => {
     try {
       const { data, error } = await supabase
-        .from("classes")
-        .select("id")
-        .eq("created_by", user!.id)
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user!.id)
+        .eq("role", "admin")
         .limit(1);
       
       if (error) throw error;
@@ -92,13 +94,28 @@ const Dashboard = () => {
     }
   };
 
+  const createClassSchema = z.object({
+    name: z.string()
+      .trim()
+      .min(1, "Class name required")
+      .max(100, "Class name too long")
+      .regex(/^[a-zA-Z0-9\s\-&.]+$/, "Only letters, numbers, spaces, hyphens, ampersands and periods allowed"),
+    description: z.string()
+      .trim()
+      .max(500, "Description too long")
+      .optional()
+  });
+
   const handleCreateClass = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const name = formData.get("name") as string;
-    const description = formData.get("description") as string;
 
     try {
+      const validated = createClassSchema.parse({
+        name: formData.get("name"),
+        description: formData.get("description") || ""
+      });
+
       // Get user's college
       const { data: profileData } = await supabase
         .from("profiles")
@@ -109,8 +126,8 @@ const Dashboard = () => {
       const { error } = await supabase
         .from("classes")
         .insert({ 
-          name, 
-          description, 
+          name: validated.name, 
+          description: validated.description, 
           created_by: user!.id,
           college: profileData?.college 
         });
@@ -125,11 +142,19 @@ const Dashboard = () => {
       setCreateDialogOpen(false);
       fetchClasses();
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      if (error instanceof z.ZodError) {
+        toast({
+          variant: "destructive",
+          title: "Validation Error",
+          description: error.errors[0].message,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: error.message,
+        });
+      }
     }
   };
 
