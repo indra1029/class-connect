@@ -111,6 +111,23 @@ const Dashboard = () => {
     const formData = new FormData(e.currentTarget);
 
     try {
+      // Check if user has already created a class
+      const { data: existingClasses, error: checkError } = await supabase
+        .from("classes")
+        .select("id")
+        .eq("created_by", user!.id);
+
+      if (checkError) throw checkError;
+
+      if (existingClasses && existingClasses.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Limit Reached",
+          description: "You can only create one class. You've already created a class.",
+        });
+        return;
+      }
+
       const validated = createClassSchema.parse({
         name: formData.get("name"),
         description: formData.get("description") || ""

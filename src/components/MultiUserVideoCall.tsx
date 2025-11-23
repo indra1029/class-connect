@@ -271,19 +271,33 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
     peerConnections.current.clear();
   };
 
-  const toggleFullscreen = () => {
-    const elem = document.documentElement;
-    if (!document.fullscreenElement) {
-      elem.requestFullscreen().catch(err => {
-        toast.error("Could not enable fullscreen");
-      });
-    } else {
-      document.exitFullscreen();
+  const toggleFullscreen = async () => {
+    try {
+      const elem = document.querySelector('.video-call-container') as HTMLElement;
+      if (!document.fullscreenElement) {
+        if (elem.requestFullscreen) {
+          await elem.requestFullscreen();
+        } else if ((elem as any).webkitRequestFullscreen) {
+          await (elem as any).webkitRequestFullscreen();
+        } else if ((elem as any).msRequestFullscreen) {
+          await (elem as any).msRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen();
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen();
+        }
+      }
+    } catch (err) {
+      toast.error("Could not toggle fullscreen");
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+    <div className="video-call-container fixed inset-0 z-50 bg-black flex flex-col">
       {/* Header with controls */}
       <div className="bg-gradient-to-r from-primary/90 to-secondary/90 backdrop-blur-sm px-4 py-3 flex items-center justify-between shadow-lg">
         <div className="flex items-center gap-3">
