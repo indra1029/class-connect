@@ -141,29 +141,8 @@ const AdminDirectory = () => {
     }
   };
 
-  const handleSendMessageRequest = async (toUserId: string) => {
-    try {
-      const { error } = await supabase
-        .from("admin_messages")
-        .insert({
-          from_user_id: user!.id,
-          to_user_id: toUserId,
-          content: "Hi! I'd like to connect with you as a class representative.",
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: "Success",
-        description: "Message sent to CR",
-      });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
-    }
+  const handleSendMessageRequest = (toUserId: string) => {
+    navigate(`/cr-chat/${toUserId}`);
   };
 
   if (loading) {
