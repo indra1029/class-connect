@@ -31,6 +31,7 @@ const Dashboard = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [isClassCreator, setIsClassCreator] = useState(false);
+  const [hasCreatedClass, setHasCreatedClass] = useState(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -83,6 +84,16 @@ const Dashboard = () => {
 
       if (error) throw error;
       setClasses(data || []);
+
+      // Check if current user has created a class
+      if (user) {
+        const { data: createdClasses } = await supabase
+          .from("classes")
+          .select("id")
+          .eq("created_by", user.id);
+        
+        setHasCreatedClass(createdClasses && createdClasses.length > 0);
+      }
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -306,43 +317,45 @@ const Dashboard = () => {
               </DialogContent>
             </Dialog>
 
-            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Class
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create a New Class</DialogTitle>
-                  <DialogDescription>
-                    Set up a new class and invite your classmates
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleCreateClass} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Class Name</Label>
-                    <Input
-                      id="name"
-                      name="name"
-                      placeholder="e.g., Computer Science 101"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description (Optional)</Label>
-                    <Textarea
-                      id="description"
-                      name="description"
-                      placeholder="Describe your class..."
-                      rows={3}
-                    />
-                  </div>
-                  <Button type="submit" className="w-full">Create Class</Button>
-                </form>
-              </DialogContent>
-            </Dialog>
+            {!hasCreatedClass && (
+              <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Class
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create a New Class</DialogTitle>
+                    <DialogDescription>
+                      Set up a new class and invite your classmates
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleCreateClass} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Class Name</Label>
+                      <Input
+                        id="name"
+                        name="name"
+                        placeholder="e.g., Computer Science 101"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="description">Description (Optional)</Label>
+                      <Textarea
+                        id="description"
+                        name="description"
+                        placeholder="Describe your class..."
+                        rows={3}
+                      />
+                    </div>
+                    <Button type="submit" className="w-full">Create Class</Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
         </div>
 
