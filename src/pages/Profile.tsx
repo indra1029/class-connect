@@ -107,12 +107,12 @@ const Profile = () => {
       .trim()
       .min(1, "Name required")
       .max(100, "Name too long")
-      .regex(/^[a-zA-Z\s]+$/, "Only letters and spaces allowed"),
+      .regex(/^[a-zA-Z0-9\s]+$/, "Only letters, numbers and spaces allowed"),
     college: z.string()
       .trim()
-      .min(3, "College name too short")
+      .min(1, "College name required")
       .max(100, "College name too long")
-      .regex(/^[a-zA-Z0-9\s.,'-]+$/, "Invalid characters in college name")
+      .regex(/^[a-zA-Z0-9\s.,()&'-]+$/, "Invalid characters in college name")
       .optional()
   });
 

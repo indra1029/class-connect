@@ -183,14 +183,39 @@ export const PresentationViewer = ({ classId, isAdmin }: PresentationViewerProps
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <iframe
-              src={activePresentation.file_url}
-              className="w-full h-[600px] rounded-lg"
-              title={activePresentation.file_name}
-            />
-            <p className="text-sm text-muted-foreground mt-2">
-              {activePresentation.file_name}
-            </p>
+            <div className="relative w-full h-[600px] bg-muted rounded-lg overflow-hidden">
+              {activePresentation.file_name.toLowerCase().endsWith('.pdf') ? (
+                <object
+                  data={activePresentation.file_url}
+                  type="application/pdf"
+                  className="w-full h-full"
+                >
+                  <embed
+                    src={`${activePresentation.file_url}#toolbar=1&navpanes=1&scrollbar=1`}
+                    type="application/pdf"
+                    className="w-full h-full"
+                  />
+                </object>
+              ) : (
+                <iframe
+                  src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(activePresentation.file_url)}`}
+                  className="w-full h-full border-0"
+                  title={activePresentation.file_name}
+                />
+              )}
+            </div>
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-sm text-muted-foreground">
+                {activePresentation.file_name}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(activePresentation.file_url, '_blank')}
+              >
+                Download
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
