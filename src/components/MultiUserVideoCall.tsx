@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Video, VideoOff, Mic, MicOff, PhoneOff, Monitor, Users } from "lucide-react";
+import { Video, VideoOff, Mic, MicOff, PhoneOff, Monitor, Users, Maximize } from "lucide-react";
 import { toast } from "sonner";
 
 interface MultiUserVideoCallProps {
@@ -271,90 +271,136 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
     peerConnections.current.clear();
   };
 
+  const toggleFullscreen = () => {
+    const elem = document.documentElement;
+    if (!document.fullscreenElement) {
+      elem.requestFullscreen().catch(err => {
+        toast.error("Could not enable fullscreen");
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center">
-      <div className="w-full max-w-6xl h-full max-h-[90vh] flex flex-col gap-4 p-4">
-        <Card className="flex-1 flex flex-col">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Video Call</CardTitle>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Users className="w-4 h-4" />
-                <span>{participants.length} participant{participants.length !== 1 ? 's' : ''}</span>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="flex-1 flex flex-col gap-4">
-            {/* Main video */}
-            <div className="flex-1 bg-black rounded-lg overflow-hidden relative">
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute bottom-4 left-4 bg-black/70 text-white px-3 py-1 rounded-full text-sm">
-                You {isVideoOff && "(Camera Off)"}
-              </div>
-            </div>
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Header with controls */}
+      <div className="bg-gradient-to-r from-primary/90 to-secondary/90 backdrop-blur-sm px-4 py-3 flex items-center justify-between shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-white">
+            <Users className="w-5 h-5" />
+            <span className="font-semibold text-lg">{participants.length}</span>
+            <span className="text-sm opacity-90">participant{participants.length !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleFullscreen}
+            className="text-white hover:bg-white/20"
+          >
+            Fullscreen
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={endCall}
+            className="text-white hover:bg-white/20"
+          >
+            Leave Call
+          </Button>
+        </div>
+      </div>
 
-            {/* Participants list */}
-            {participants.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                {participants
-                  .filter(p => p.user_id !== userId)
-                  .map((participant) => (
-                    <div
-                      key={participant.user_id}
-                      className="flex-shrink-0 w-32 h-24 bg-muted rounded-lg flex items-center justify-center text-sm"
-                    >
-                      {participant.full_name || "Participant"}
+      {/* Main video area */}
+      <div className="flex-1 relative overflow-hidden">
+        <video
+          ref={localVideoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-full h-full object-cover"
+        />
+        
+        {/* Status overlay */}
+        <div className="absolute top-4 left-4 flex flex-col gap-2">
+          <div className="bg-black/70 text-white px-4 py-2 rounded-full text-sm font-medium backdrop-blur-sm">
+            You {isVideoOff && "• Camera Off"}
+          </div>
+          {isScreenSharing && (
+            <div className="bg-primary/80 text-white px-4 py-2 rounded-full text-sm font-medium backdrop-blur-sm">
+              📺 Sharing Screen
+            </div>
+          )}
+        </div>
+
+        {/* Participants grid */}
+        {participants.length > 1 && (
+          <div className="absolute top-4 right-4 flex flex-col gap-2 max-h-[calc(100%-120px)] overflow-y-auto">
+            {participants
+              .filter(p => p.user_id !== userId)
+              .map((participant) => (
+                <Card
+                  key={participant.user_id}
+                  className="w-40 h-28 bg-muted/90 backdrop-blur-sm border-2 border-primary/50"
+                >
+                  <CardContent className="p-2 h-full flex flex-col items-center justify-center">
+                    <div className="w-12 h-12 rounded-full bg-gradient-hero flex items-center justify-center text-white font-bold text-lg mb-1">
+                      {participant.full_name?.charAt(0).toUpperCase() || "?"}
                     </div>
-                  ))}
-              </div>
-            )}
+                    <p className="text-xs font-medium text-center truncate w-full">
+                      {participant.full_name || "Participant"}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+          </div>
+        )}
+      </div>
 
-            {/* Controls */}
-            <div className="flex items-center justify-center gap-2">
-              <Button
-                variant={isMuted ? "destructive" : "secondary"}
-                size="icon"
-                onClick={toggleMute}
-                className="rounded-full w-12 h-12"
-              >
-                {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-              </Button>
+      {/* Bottom control bar */}
+      <div className="bg-gradient-to-r from-primary/90 to-secondary/90 backdrop-blur-sm px-4 py-4 flex items-center justify-center gap-3 shadow-lg">
+        <Button
+          variant={isMuted ? "destructive" : "secondary"}
+          size="lg"
+          onClick={toggleMute}
+          className="rounded-full w-14 h-14 shadow-lg hover:scale-110 transition-transform"
+          title={isMuted ? "Unmute" : "Mute"}
+        >
+          {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+        </Button>
 
-              <Button
-                variant={isVideoOff ? "destructive" : "secondary"}
-                size="icon"
-                onClick={toggleVideo}
-                className="rounded-full w-12 h-12"
-              >
-                {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
-              </Button>
+        <Button
+          variant={isVideoOff ? "destructive" : "secondary"}
+          size="lg"
+          onClick={toggleVideo}
+          className="rounded-full w-14 h-14 shadow-lg hover:scale-110 transition-transform"
+          title={isVideoOff ? "Turn on camera" : "Turn off camera"}
+        >
+          {isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+        </Button>
 
-              <Button
-                variant={isScreenSharing ? "default" : "secondary"}
-                size="icon"
-                onClick={toggleScreenShare}
-                className="rounded-full w-12 h-12"
-              >
-                <Monitor className="w-5 h-5" />
-              </Button>
+        <Button
+          variant={isScreenSharing ? "default" : "secondary"}
+          size="lg"
+          onClick={toggleScreenShare}
+          className="rounded-full w-14 h-14 shadow-lg hover:scale-110 transition-transform"
+          title={isScreenSharing ? "Stop sharing" : "Share screen"}
+        >
+          <Monitor className="w-6 h-6" />
+        </Button>
 
-              <Button
-                variant="destructive"
-                size="icon"
-                onClick={endCall}
-                className="rounded-full w-12 h-12"
-              >
-                <PhoneOff className="w-5 h-5" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <Button
+          variant="destructive"
+          size="lg"
+          onClick={endCall}
+          className="rounded-full w-14 h-14 shadow-lg hover:scale-110 transition-transform ml-4"
+          title="End call"
+        >
+          <PhoneOff className="w-6 h-6" />
+        </Button>
       </div>
     </div>
   );
