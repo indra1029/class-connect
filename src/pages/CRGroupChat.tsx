@@ -1,39 +1,34 @@
 import { useEffect, useState, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Send, Paperclip, Download } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Download, Video } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 
-interface AdminMessage {
+interface CRMessage {
   id: string;
   from_user_id: string;
-  to_user_id: string;
   content: string;
   file_url: string | null;
   created_at: string;
-  read: boolean;
+  profiles: {
+    full_name: string;
+    avatar_url: string | null;
+  };
 }
 
-interface CRProfile {
-  id: string;
-  full_name: string;
-  avatar_url: string | null;
-  college: string | null;
-}
-
-const CRMessages = () => {
+const CRGroupChat = () => {
   const navigate = useNavigate();
-  const { crId } = useParams();
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
-  const [messages, setMessages] = useState<AdminMessage[]>([]);
-  const [crProfile, setCRProfile] = useState<CRProfile | null>(null);
+  const [messages, setMessages] = useState<CRMessage[]>([]);
+  const [crMembers, setCRMembers] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -50,13 +45,12 @@ const CRMessages = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (user && crId) {
-      fetchCRProfile();
+    if (user) {
+      fetchCRMembers();
       fetchMessages();
       subscribeToMessages();
-      markMessagesAsRead();
     }
-  }, [user, crId]);
+  }, [user]);
 
   useEffect(() => {
     scrollToBottom();
@@ -66,35 +60,59 @@ const CRMessages = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const fetchCRProfile = async () => {
+  const fetchCRMembers = async () => {
     try {
       const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, avatar_url, college")
-        .eq("id", crId)
-        .single();
+        .rpc("get_college_admins", { _user_id: user!.id });
 
       if (error) throw error;
-      setCRProfile(data);
+      setCRMembers(data || []);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      console.error("Error fetching CR members:", error);
     }
   };
 
   const fetchMessages = async () => {
     try {
-      const { data, error } = await supabase
+      // Get user's verified college
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("verified_college")
+        .eq("id", user!.id)
+        .single();
+
+      if (!profileData?.verified_college) {
+        setLoading(false);
+        return;
+      }
+
+      // Fetch messages from all CRs in the same college
+      const { data: messagesData, error: messagesError } = await supabase
         .from("admin_messages")
         .select("*")
-        .or(`and(from_user_id.eq.${user!.id},to_user_id.eq.${crId}),and(from_user_id.eq.${crId},to_user_id.eq.${user!.id})`)
         .order("created_at", { ascending: true });
 
-      if (error) throw error;
-      setMessages(data || []);
+      if (messagesError) throw messagesError;
+
+      // Fetch all profiles for message senders
+      const userIds = [...new Set(messagesData?.map(m => m.from_user_id) || [])];
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("id, full_name, avatar_url")
+        .in("id", userIds);
+
+      // Create a map of profiles
+      const profilesMap = new Map(
+        profilesData?.map(p => [p.id, { full_name: p.full_name, avatar_url: p.avatar_url }]) || []
+      );
+
+      // Combine messages with profiles
+      const messagesWithProfiles = messagesData?.map(msg => ({
+        ...msg,
+        profiles: profilesMap.get(msg.from_user_id) || { full_name: "Unknown User", avatar_url: null }
+      })) || [];
+
+      setMessages(messagesWithProfiles);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -108,7 +126,7 @@ const CRMessages = () => {
 
   const subscribeToMessages = () => {
     const channel = supabase
-      .channel(`admin-messages-${crId}`)
+      .channel("cr-group-chat")
       .on(
         "postgres_changes",
         {
@@ -118,7 +136,6 @@ const CRMessages = () => {
         },
         () => {
           fetchMessages();
-          markMessagesAsRead();
         }
       )
       .subscribe();
@@ -128,40 +145,24 @@ const CRMessages = () => {
     };
   };
 
-  const markMessagesAsRead = async () => {
-    try {
-      await supabase
-        .from("admin_messages")
-        .update({ read: true })
-        .eq("to_user_id", user!.id)
-        .eq("from_user_id", crId)
-        .eq("read", false);
-    } catch (error) {
-      console.error("Error marking messages as read:", error);
-    }
-  };
-
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!newMessage.trim()) return;
 
     try {
+      // Broadcast to all CRs by using a special group indicator
       const { error } = await supabase
         .from("admin_messages")
         .insert({
           from_user_id: user!.id,
-          to_user_id: crId!,
+          to_user_id: user!.id, // Group messages use same user ID
           content: newMessage.trim(),
         });
 
       if (error) throw error;
 
       setNewMessage("");
-      toast({
-        title: "Success",
-        description: "Message sent successfully",
-      });
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -178,23 +179,23 @@ const CRMessages = () => {
     setUploading(true);
     try {
       const fileExt = file.name.split(".").pop();
-      const fileName = `${user!.id}/${Date.now()}.${fileExt}`;
+      const fileName = `cr-files/${user!.id}-${Date.now()}.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
-        .from("private-messages")
+        .from("class-files")
         .upload(fileName, file);
 
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage
-        .from("private-messages")
+        .from("class-files")
         .getPublicUrl(fileName);
 
       const { error: insertError } = await supabase
         .from("admin_messages")
         .insert({
           from_user_id: user!.id,
-          to_user_id: crId!,
+          to_user_id: user!.id, // Group messages
           content: `Shared a file: ${file.name}`,
           file_url: publicUrl,
         });
@@ -236,66 +237,81 @@ const CRMessages = () => {
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back
             </Button>
-            {crProfile && (
-              <div className="flex items-center gap-3">
-                <Avatar>
-                  <AvatarImage src={crProfile.avatar_url || ""} />
-                  <AvatarFallback className="bg-gradient-hero text-white">
-                    {crProfile.full_name.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div>
-                  <p className="font-semibold">{crProfile.full_name}</p>
-                  <p className="text-xs text-muted-foreground">{crProfile.college}</p>
-                </div>
-              </div>
-            )}
+            <div>
+              <p className="font-semibold text-lg">CR Collaboration Hub</p>
+              <p className="text-xs text-muted-foreground">
+                {crMembers.length + 1} Class Representatives
+              </p>
+            </div>
           </div>
+          <Badge variant="default" className="hidden md:flex">Group Chat</Badge>
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-4 py-6 flex flex-col max-w-4xl">
+      <main className="flex-1 container mx-auto px-4 py-6 flex flex-col max-w-5xl">
         <Card className="flex-1 flex flex-col">
-          <CardHeader>
-            <CardTitle>CR Collaboration Chat</CardTitle>
+          <CardHeader className="border-b">
+            <div className="flex items-center justify-between">
+              <CardTitle>CR Network - Collaboration Space</CardTitle>
+              <Button variant="outline" size="sm">
+                <Video className="w-4 h-4 mr-2" />
+                Start Video Meeting
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground mt-2">
+              Connect, collaborate, and share resources with other Class Representatives from your college
+            </p>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col p-0">
             <ScrollArea className="flex-1 px-4">
               <div className="space-y-4 py-4">
                 {messages.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">
-                    No messages yet. Start the conversation!
-                  </p>
+                  <div className="text-center py-12">
+                    <p className="text-muted-foreground mb-2">
+                      Welcome to the CR Collaboration Hub! 🎓
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      This is a shared space for all Class Representatives in your college to collaborate.
+                    </p>
+                  </div>
                 ) : (
                   messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${
-                        message.from_user_id === user?.id ? "justify-end" : "justify-start"
-                      }`}
-                    >
-                      <div
-                        className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                          message.from_user_id === user?.id
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted"
-                        }`}
-                      >
-                        <p className="text-sm">{message.content}</p>
-                        {message.file_url && (
-                          <a
-                            href={message.file_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 mt-2 text-xs underline"
-                          >
-                            <Download className="w-3 h-3" />
-                            Download File
-                          </a>
-                        )}
-                        <p className="text-xs opacity-70 mt-1">
-                          {new Date(message.created_at).toLocaleTimeString()}
-                        </p>
+                    <div key={message.id} className="flex gap-3">
+                      <Avatar className="w-8 h-8 mt-1">
+                        <AvatarImage src={message.profiles?.avatar_url || ""} />
+                        <AvatarFallback className="bg-gradient-hero text-white text-xs">
+                          {message.profiles?.full_name?.charAt(0).toUpperCase() || "U"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-semibold text-sm">
+                            {message.profiles?.full_name || "Unknown User"}
+                          </p>
+                          {message.from_user_id === user?.id && (
+                            <Badge variant="secondary" className="text-xs">You</Badge>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(message.created_at).toLocaleTimeString([], { 
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            })}
+                          </p>
+                        </div>
+                        <div className="bg-muted rounded-lg px-4 py-2">
+                          <p className="text-sm">{message.content}</p>
+                          {message.file_url && (
+                            <a
+                              href={message.file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 mt-2 text-xs text-primary hover:underline"
+                            >
+                              <Download className="w-3 h-3" />
+                              Download File
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))
@@ -304,7 +320,7 @@ const CRMessages = () => {
               </div>
             </ScrollArea>
 
-            <div className="border-t p-4">
+            <div className="border-t p-4 bg-card/50">
               <form onSubmit={handleSendMessage} className="flex gap-2">
                 <input
                   ref={fileInputRef}
@@ -319,14 +335,16 @@ const CRMessages = () => {
                   size="icon"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
+                  title="Attach file"
                 >
                   <Paperclip className="w-4 h-4" />
                 </Button>
                 <Input
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Type your message..."
+                  placeholder="Share your thoughts with fellow CRs..."
                   disabled={uploading}
+                  className="flex-1"
                 />
                 <Button type="submit" disabled={!newMessage.trim() || uploading}>
                   <Send className="w-4 h-4" />
@@ -340,4 +358,4 @@ const CRMessages = () => {
   );
 };
 
-export default CRMessages;
+export default CRGroupChat;

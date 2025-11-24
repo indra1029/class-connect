@@ -32,6 +32,7 @@ const Dashboard = () => {
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [isClassCreator, setIsClassCreator] = useState(false);
   const [hasCreatedClass, setHasCreatedClass] = useState(false);
+  const [isMemberOfAnyClass, setIsMemberOfAnyClass] = useState(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -93,6 +94,15 @@ const Dashboard = () => {
           .eq("created_by", user.id);
         
         setHasCreatedClass(createdClasses && createdClasses.length > 0);
+
+        // Check if user is a member of any class
+        const { data: membershipData } = await supabase
+          .from("class_members")
+          .select("id")
+          .eq("user_id", user.id)
+          .limit(1);
+        
+        setIsMemberOfAnyClass(membershipData && membershipData.length > 0);
       }
     } catch (error: any) {
       toast({
@@ -288,13 +298,14 @@ const Dashboard = () => {
             <p className="text-muted-foreground mt-1">Manage and join your class communities</p>
           </div>
           <div className="flex gap-3">
-            <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline">
-                  <Users className="w-4 h-4 mr-2" />
-                  Join Class
-                </Button>
-              </DialogTrigger>
+            {!isMemberOfAnyClass && (
+              <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline">
+                    <Users className="w-4 h-4 mr-2" />
+                    Join Class
+                  </Button>
+                </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Join a Class</DialogTitle>
@@ -316,8 +327,9 @@ const Dashboard = () => {
                 </form>
               </DialogContent>
             </Dialog>
+            )}
 
-            {!hasCreatedClass && (
+            {!isMemberOfAnyClass && !hasCreatedClass && (
               <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
                 <DialogTrigger asChild>
                   <Button>
