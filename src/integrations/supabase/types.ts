@@ -203,6 +203,71 @@ export type Database = {
         }
         Relationships: []
       }
+      cr_video_participants: {
+        Row: {
+          id: string
+          is_active: boolean | null
+          joined_at: string
+          left_at: string | null
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          is_active?: boolean | null
+          joined_at?: string
+          left_at?: string | null
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          is_active?: boolean | null
+          joined_at?: string
+          left_at?: string | null
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cr_video_participants_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "cr_video_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cr_video_sessions: {
+        Row: {
+          college: string
+          ended_at: string | null
+          id: string
+          is_active: boolean | null
+          session_name: string
+          started_at: string
+          started_by: string
+        }
+        Insert: {
+          college: string
+          ended_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          session_name?: string
+          started_at?: string
+          started_by: string
+        }
+        Update: {
+          college?: string
+          ended_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          session_name?: string
+          started_at?: string
+          started_by?: string
+        }
+        Relationships: []
+      }
       message_requests: {
         Row: {
           created_at: string
