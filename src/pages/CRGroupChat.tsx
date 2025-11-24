@@ -10,6 +10,7 @@ import { ArrowLeft, Send, Paperclip, Download, Video } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import CRVideoConference from "@/components/CRVideoConference";
 
 interface CRMessage {
   id: string;
@@ -32,6 +33,8 @@ const CRGroupChat = () => {
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [activeVideoSession, setActiveVideoSession] = useState<string | null>(null);
+  const [userCollege, setUserCollege] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -46,11 +49,45 @@ const CRGroupChat = () => {
 
   useEffect(() => {
     if (user) {
+      fetchUserCollege();
       fetchCRMembers();
       fetchMessages();
       subscribeToMessages();
+      checkActiveVideoSession();
     }
   }, [user]);
+
+  const fetchUserCollege = async () => {
+    try {
+      const { data } = await supabase
+        .from("profiles")
+        .select("verified_college")
+        .eq("id", user!.id)
+        .single();
+      
+      setUserCollege(data?.verified_college || null);
+    } catch (error) {
+      console.error("Error fetching user college:", error);
+    }
+  };
+
+  const checkActiveVideoSession = async () => {
+    try {
+      const { data } = await supabase
+        .from("cr_video_sessions")
+        .select("id")
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (data) {
+        setActiveVideoSession(data.id);
+      }
+    } catch (error) {
+      console.error("Error checking video session:", error);
+    }
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -125,7 +162,7 @@ const CRGroupChat = () => {
   };
 
   const subscribeToMessages = () => {
-    const channel = supabase
+    const messagesChannel = supabase
       .channel("cr-group-chat")
       .on(
         "postgres_changes",
@@ -140,9 +177,69 @@ const CRGroupChat = () => {
       )
       .subscribe();
 
+    const videoChannel = supabase
+      .channel("cr-video-sessions")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cr_video_sessions",
+        },
+        () => {
+          checkActiveVideoSession();
+        }
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(messagesChannel);
+      supabase.removeChannel(videoChannel);
     };
+  };
+
+  const startVideoMeeting = async () => {
+    try {
+      if (!userCollege) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "College information not found",
+        });
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("cr_video_sessions")
+        .insert({
+          college: userCollege,
+          started_by: user!.id,
+          session_name: "CR Network Meeting",
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setActiveVideoSession(data.id);
+      toast({
+        title: "Video Meeting Started",
+        description: "Other CRs have been notified",
+      });
+    } catch (error: any) {
+      console.error("Error starting video meeting:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to start video meeting",
+      });
+    }
+  };
+
+  const joinVideoMeeting = () => {
+    if (activeVideoSession) {
+      // Video conference will handle joining
+    }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -228,6 +325,16 @@ const CRGroupChat = () => {
     );
   }
 
+  if (activeVideoSession) {
+    return (
+      <CRVideoConference
+        sessionId={activeVideoSession}
+        user={user!}
+        onClose={() => setActiveVideoSession(null)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-10">
@@ -253,10 +360,17 @@ const CRGroupChat = () => {
           <CardHeader className="border-b">
             <div className="flex items-center justify-between">
               <CardTitle>CR Network - Collaboration Space</CardTitle>
-              <Button variant="outline" size="sm">
-                <Video className="w-4 h-4 mr-2" />
-                Start Video Meeting
-              </Button>
+              {activeVideoSession ? (
+                <Button variant="default" size="sm" onClick={joinVideoMeeting}>
+                  <Video className="w-4 h-4 mr-2" />
+                  Join Video Meeting
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={startVideoMeeting}>
+                  <Video className="w-4 h-4 mr-2" />
+                  Start Video Meeting
+                </Button>
+              )}
             </div>
             <p className="text-sm text-muted-foreground mt-2">
               Connect, collaborate, and share resources with other Class Representatives from your college
