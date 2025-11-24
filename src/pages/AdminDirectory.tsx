@@ -141,8 +141,8 @@ const AdminDirectory = () => {
     }
   };
 
-  const handleSendMessageRequest = (toUserId: string) => {
-    navigate(`/cr-chat/${toUserId}`);
+  const handleOpenCollaborationHub = () => {
+    navigate("/cr-group-chat");
   };
 
   if (loading) {
@@ -173,12 +173,20 @@ const AdminDirectory = () => {
                 Connect with other class representatives in your college
               </p>
             </div>
-            {isVerified && (
-              <Badge variant="default" className="flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" />
-                Verified
-              </Badge>
-            )}
+            <div className="flex items-center gap-3">
+              {isVerified && (
+                <>
+                  <Button onClick={handleOpenCollaborationHub}>
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    CR Collaboration Hub
+                  </Button>
+                  <Badge variant="default" className="flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    Verified
+                  </Badge>
+                </>
+              )}
+            </div>
           </div>
 
           {!isVerified && (
@@ -263,13 +271,9 @@ const AdminDirectory = () => {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <Button
-                        className="w-full"
-                        onClick={() => handleSendMessageRequest(admin.user_id)}
-                      >
-                        <MessageSquare className="w-4 h-4 mr-2" />
-                        Send Message
-                      </Button>
+                      <p className="text-sm text-muted-foreground text-center py-2">
+                        Connect via CR Collaboration Hub
+                      </p>
                     </CardContent>
                   </Card>
                 ))}
