@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Send, Users, Copy, Check, Paperclip, Trash2, UserCircle, Video, Smile, MessageSquare, Megaphone, Presentation, BarChart3, Calendar as CalendarIcon } from "lucide-react";
+import { ArrowLeft, Send, Users, Copy, Check, Paperclip, Trash2, UserCircle, Video, Smile, MessageSquare, Megaphone, Presentation, BarChart3, Calendar as CalendarIcon, Pin } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ClassMembers } from "@/components/ClassMembers";
 import VideoCall from "@/components/VideoCall";
@@ -16,6 +16,7 @@ import { Announcements } from "@/components/Announcements";
 import { PresentationViewer } from "@/components/PresentationViewer";
 import { Polls } from "@/components/Polls";
 import { ClassCalendar } from "@/components/ClassCalendar";
+import { NoticeBoard } from "@/components/NoticeBoard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { z } from "zod";
 
@@ -416,6 +417,10 @@ const ClassRoom = () => {
                 <CalendarIcon className="w-4 h-4" />
                 Calendar
               </TabsTrigger>
+              <TabsTrigger value="noticeboard" className="flex items-center gap-2">
+                <Pin className="w-4 h-4" />
+                Notice Board
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="chat" className="flex-1 flex flex-col mt-0">
@@ -541,6 +546,10 @@ const ClassRoom = () => {
 
             <TabsContent value="calendar" className="flex-1 overflow-y-auto">
               <ClassCalendar classId={classId!} />
+            </TabsContent>
+
+            <TabsContent value="noticeboard" className="flex-1 overflow-y-auto">
+              <NoticeBoard classId={classId!} isAdmin={isAdmin} />
             </TabsContent>
           </Tabs>
         </div>

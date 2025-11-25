@@ -343,6 +343,63 @@ export type Database = {
           },
         ]
       }
+      notice_board: {
+        Row: {
+          class_id: string
+          content: string
+          content_type: string
+          created_at: string
+          file_name: string | null
+          file_url: string | null
+          id: string
+          image_url: string | null
+          is_pinned: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          class_id: string
+          content: string
+          content_type?: string
+          created_at?: string
+          file_name?: string | null
+          file_url?: string | null
+          id?: string
+          image_url?: string | null
+          is_pinned?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          class_id?: string
+          content?: string
+          content_type?: string
+          created_at?: string
+          file_name?: string | null
+          file_url?: string | null
+          id?: string
+          image_url?: string | null
+          is_pinned?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notice_board_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "class_analytics"
+            referencedColumns: ["class_id"]
+          },
+          {
+            foreignKeyName: "notice_board_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           created_at: string | null
