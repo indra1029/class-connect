@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import CRVideoConference from "@/components/CRVideoConference";
+import { z } from "zod";
 
 interface CRMessage {
   id: string;
@@ -242,32 +243,55 @@ const CRGroupChat = () => {
     }
   };
 
+  const messageSchema = z.object({
+    content: z.string()
+      .trim()
+      .min(1, "Message cannot be empty")
+      .max(2000, "Message is too long (max 2000 characters)")
+  });
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!newMessage.trim()) return;
 
     try {
+      const validated = messageSchema.parse({ content: newMessage });
+
       // Broadcast to all CRs by using a special group indicator
       const { error } = await supabase
         .from("admin_messages")
         .insert({
           from_user_id: user!.id,
           to_user_id: user!.id, // Group messages use same user ID
-          content: newMessage.trim(),
+          content: validated.content,
         });
 
       if (error) throw error;
 
       setNewMessage("");
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      if (error instanceof z.ZodError) {
+        toast({
+          variant: "destructive",
+          title: "Validation Error",
+          description: error.errors[0].message,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: error.message,
+        });
+      }
     }
   };
+
+  const fileSchema = z.object({
+    name: z.string().max(255, "Filename is too long"),
+    size: z.number().max(50 * 1024 * 1024, "File size must be less than 50MB"),
+    type: z.string().regex(/^[a-zA-Z0-9\/\-\+\.]+$/, "Invalid file type")
+  });
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -275,6 +299,13 @@ const CRGroupChat = () => {
 
     setUploading(true);
     try {
+      // Validate file
+      fileSchema.parse({
+        name: file.name,
+        size: file.size,
+        type: file.type
+      });
+
       const fileExt = file.name.split(".").pop();
       const fileName = `cr-files/${user!.id}-${Date.now()}.${fileExt}`;
       
