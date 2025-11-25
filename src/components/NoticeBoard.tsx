@@ -213,7 +213,7 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
 
       setDialogOpen(false);
       setUploadedFile(null);
-      e.currentTarget.reset();
+      (e.target as HTMLFormElement).reset();
     } catch (error: any) {
       if (error instanceof z.ZodError) {
         toast({
@@ -344,36 +344,42 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
       </div>
 
       {items.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Pin className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground">No pinned notices</p>
-            {isAdmin && (
-              <p className="text-sm text-muted-foreground mt-2">
-                Pin important information for your class members
-              </p>
-            )}
+        <Card className="border-dashed">
+          <CardContent className="py-16 text-center">
+            <Pin className="w-20 h-20 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <h3 className="text-lg font-semibold mb-2">No Pinned Notices</h3>
+            <p className="text-muted-foreground max-w-sm mx-auto">
+              {isAdmin 
+                ? "Start pinning important announcements, images, or documents to share with your class members."
+                : "Your class admin hasn't pinned any notices yet."}
+            </p>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {items.map((item) => (
-            <Card key={item.id} className="border-l-4 border-l-primary">
+            <Card key={item.id} className="border-l-4 border-l-primary shadow-md hover:shadow-lg transition-shadow">
               <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="w-8 h-8">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1">
+                    <Avatar className="w-10 h-10 border-2 border-primary/20">
                       <AvatarImage src={item.profiles?.avatar_url || ""} />
-                      <AvatarFallback>
+                      <AvatarFallback className="bg-primary/10 text-primary font-semibold">
                         {item.profiles?.full_name?.charAt(0).toUpperCase() || "?"}
                       </AvatarFallback>
                     </Avatar>
-                    <div>
-                      <p className="text-sm font-medium">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground">
                         {item.profiles?.full_name || "Unknown"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(item.created_at).toLocaleString()}
+                        {new Date(item.created_at).toLocaleDateString('en-US', { 
+                          month: 'short', 
+                          day: 'numeric', 
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
                       </p>
                     </div>
                   </div>
@@ -382,16 +388,18 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
                       <Button
                         size="icon"
                         variant="ghost"
+                        className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => handleUnpin(item.id)}
-                        title="Unpin"
+                        title="Unpin from board"
                       >
                         <PinOff className="w-4 h-4" />
                       </Button>
                       <Button
                         size="icon"
                         variant="ghost"
+                        className="h-8 w-8 hover:bg-destructive/10"
                         onClick={() => handleDelete(item.id)}
-                        title="Delete"
+                        title="Delete permanently"
                       >
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </Button>
@@ -399,15 +407,20 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm whitespace-pre-wrap">{item.content}</p>
+              <CardContent className="space-y-4">
+                {item.content && (
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap bg-muted/30 p-4 rounded-lg border">
+                    {item.content}
+                  </p>
+                )}
                 
                 {item.image_url && (
-                  <div className="rounded-lg overflow-hidden border">
+                  <div className="rounded-xl overflow-hidden border-2 border-border bg-muted/20">
                     <img
                       src={item.image_url}
-                      alt="Notice attachment"
-                      className="w-full max-h-96 object-contain"
+                      alt="Notice board attachment"
+                      className="w-full h-auto object-contain max-h-[500px] bg-background"
+                      loading="lazy"
                     />
                   </div>
                 )}
@@ -417,10 +430,20 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
                     href={item.file_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 p-3 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors"
+                    className="flex items-center gap-3 p-4 bg-primary/5 border-2 border-primary/20 rounded-xl hover:bg-primary/10 hover:border-primary/30 transition-all group"
                   >
-                    <FileText className="w-5 h-5 text-primary" />
-                    <span className="text-sm font-medium">{item.file_name}</span>
+                    <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
+                      <FileText className="w-6 h-6 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {item.file_name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Click to open or download
+                      </p>
+                    </div>
+                    <Upload className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                   </a>
                 )}
               </CardContent>
