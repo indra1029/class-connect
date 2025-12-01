@@ -549,7 +549,7 @@ const ClassRoom = () => {
             </TabsContent>
 
             <TabsContent value="documents" className="flex-1 overflow-y-auto">
-              <ClassDocuments classId={classId!} />
+              <ClassDocuments classId={classId!} isAdmin={isAdmin} />
             </TabsContent>
           </Tabs>
         </div>

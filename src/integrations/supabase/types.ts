@@ -268,6 +268,48 @@ export type Database = {
         }
         Relationships: []
       }
+      document_categories: {
+        Row: {
+          class_id: string
+          created_at: string | null
+          created_by: string
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string | null
+          created_by: string
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string | null
+          created_by?: string
+          description?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_categories_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "class_analytics"
+            referencedColumns: ["class_id"]
+          },
+          {
+            foreignKeyName: "document_categories_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_requests: {
         Row: {
           created_at: string
@@ -297,6 +339,7 @@ export type Database = {
       }
       messages: {
         Row: {
+          category_id: string | null
           class_id: string
           content: string
           created_at: string
@@ -307,6 +350,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          category_id?: string | null
           class_id: string
           content: string
           created_at?: string
@@ -317,6 +361,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          category_id?: string | null
           class_id?: string
           content?: string
           created_at?: string
@@ -327,6 +372,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "messages_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "document_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "messages_class_id_fkey"
             columns: ["class_id"]
@@ -345,6 +397,7 @@ export type Database = {
       }
       notice_board: {
         Row: {
+          category_id: string | null
           class_id: string
           content: string
           content_type: string
@@ -358,6 +411,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          category_id?: string | null
           class_id: string
           content: string
           content_type?: string
@@ -371,6 +425,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          category_id?: string | null
           class_id?: string
           content?: string
           content_type?: string
@@ -384,6 +439,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "notice_board_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "document_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "notice_board_class_id_fkey"
             columns: ["class_id"]
