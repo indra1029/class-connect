@@ -16,7 +16,7 @@ import { Announcements } from "@/components/Announcements";
 import { PresentationViewer } from "@/components/PresentationViewer";
 import { Polls } from "@/components/Polls";
 import { ClassCalendar } from "@/components/ClassCalendar";
-import { NoticeBoard } from "@/components/NoticeBoard";
+import { ClassDocuments } from "@/components/ClassDocuments";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { z } from "zod";
 
@@ -396,7 +396,7 @@ const ClassRoom = () => {
         
         <div className="flex-1 flex flex-col max-w-6xl">
           <Tabs defaultValue="chat" className="flex-1 flex flex-col">
-            <TabsList className="grid w-full grid-cols-5 mb-4">
+            <TabsList className="grid w-full grid-cols-6 mb-4">
               <TabsTrigger value="chat" className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4" />
                 Chat
@@ -417,9 +417,9 @@ const ClassRoom = () => {
                 <CalendarIcon className="w-4 h-4" />
                 Calendar
               </TabsTrigger>
-              <TabsTrigger value="noticeboard" className="flex items-center gap-2">
-                <Pin className="w-4 h-4" />
-                Notice Board
+              <TabsTrigger value="documents" className="flex items-center gap-2">
+                <Paperclip className="w-4 h-4" />
+                Documents
               </TabsTrigger>
             </TabsList>
 
@@ -548,8 +548,8 @@ const ClassRoom = () => {
               <ClassCalendar classId={classId!} />
             </TabsContent>
 
-            <TabsContent value="noticeboard" className="flex-1 overflow-y-auto">
-              <NoticeBoard classId={classId!} isAdmin={isAdmin} />
+            <TabsContent value="documents" className="flex-1 overflow-y-auto">
+              <ClassDocuments classId={classId!} />
             </TabsContent>
           </Tabs>
         </div>
