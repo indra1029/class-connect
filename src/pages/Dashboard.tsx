@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { GraduationCap, LogOut, Plus, Users, MessageSquare, UserCircle, BarChart3, Network } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
+import { NoticeBoard } from "@/components/NoticeBoard";
 import { z } from "zod";
 
 interface Class {
@@ -33,6 +34,8 @@ const Dashboard = () => {
   const [isClassCreator, setIsClassCreator] = useState(false);
   const [hasCreatedClass, setHasCreatedClass] = useState(false);
   const [isMemberOfAnyClass, setIsMemberOfAnyClass] = useState(false);
+  const [userClassId, setUserClassId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -98,11 +101,16 @@ const Dashboard = () => {
         // Check if user is a member of any class
         const { data: membershipData } = await supabase
           .from("class_members")
-          .select("id")
+          .select("id, class_id, role")
           .eq("user_id", user.id)
           .limit(1);
         
         setIsMemberOfAnyClass(membershipData && membershipData.length > 0);
+        
+        if (membershipData && membershipData.length > 0) {
+          setUserClassId(membershipData[0].class_id);
+          setIsAdmin(membershipData[0].role === 'admin');
+        }
       }
     } catch (error: any) {
       toast({
@@ -371,42 +379,62 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {classes.length === 0 ? (
-          <Card className="text-center py-12">
-            <CardContent>
-              <GraduationCap className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-              <CardTitle className="mb-2">No classes yet</CardTitle>
-              <CardDescription className="mb-6">
-                Create your first class or join one using an invite code
-              </CardDescription>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {classes.map((cls) => (
-              <Card
-                key={cls.id}
-                className="hover:shadow-hover transition-all cursor-pointer group"
-                onClick={() => navigate(`/class/${cls.id}`)}
-              >
-                <CardHeader>
-                  <CardTitle className="group-hover:text-primary transition-colors">
-                    {cls.name}
-                  </CardTitle>
-                  {cls.description && (
-                    <CardDescription>{cls.description}</CardDescription>
-                  )}
-                </CardHeader>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className={classes.length === 0 ? "lg:col-span-3" : "lg:col-span-1"}>
+            {classes.length === 0 ? (
+              <Card className="text-center py-12">
                 <CardContent>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Users className="w-4 h-4" />
-                    <span>Invite code: {cls.invite_code}</span>
-                  </div>
+                  <GraduationCap className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                  <CardTitle className="mb-2">No classes yet</CardTitle>
+                  <CardDescription className="mb-6">
+                    Create your first class or join one using an invite code
+                  </CardDescription>
                 </CardContent>
               </Card>
-            ))}
+            ) : (
+              <div className="space-y-6">
+                {classes.map((cls) => (
+                  <Card
+                    key={cls.id}
+                    className="hover:shadow-hover transition-all cursor-pointer group border-l-4 border-l-primary"
+                    onClick={() => navigate(`/class/${cls.id}`)}
+                  >
+                    <CardHeader>
+                      <CardTitle className="group-hover:text-primary transition-colors">
+                        {cls.name}
+                      </CardTitle>
+                      {cls.description && (
+                        <CardDescription>{cls.description}</CardDescription>
+                      )}
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Users className="w-4 h-4" />
+                        <span>Invite code: {cls.invite_code}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+
+          {userClassId && (
+            <div className="lg:col-span-2">
+              <Card className="shadow-lg border-2">
+                <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5">
+                  <CardTitle className="text-2xl">📌 Notice Board</CardTitle>
+                  <CardDescription>
+                    Important announcements and updates for your class
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <NoticeBoard classId={userClassId} isAdmin={isAdmin} />
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );

@@ -118,10 +118,7 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
     };
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const uploadFile = async (file: File) => {
     // File size validation (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       toast({
@@ -129,7 +126,7 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
         title: "File Too Large",
         description: "File size must be less than 5MB",
       });
-      return;
+      return null;
     }
 
     setUploading(true);
@@ -149,25 +146,65 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
         .getPublicUrl(filePath);
 
       const isImage = file.type.startsWith("image/");
-      setUploadedFile({
-        url: publicUrl,
-        name: file.name,
-        type: isImage ? "image" : "file",
-      });
-
+      
       toast({
         title: "Success",
         description: "File uploaded successfully",
       });
+
+      return {
+        url: publicUrl,
+        name: file.name,
+        type: isImage ? "image" : "file",
+      };
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Upload Failed",
         description: error.message,
       });
+      return null;
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const result = await uploadFile(file);
+    if (result) {
+      setUploadedFile(result);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    // Check if it's an image
+    if (!file.type.startsWith("image/")) {
+      toast({
+        variant: "destructive",
+        title: "Invalid File",
+        description: "Only image files can be dragged and dropped",
+      });
+      return;
+    }
+
+    const result = await uploadFile(file);
+    if (result) {
+      setUploadedFile(result);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
   };
 
   const handleCreateNotice = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -318,23 +355,35 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="file">Attach Image or File (Optional)</Label>
-                  <div className="flex gap-2">
+                  <div 
+                    className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors"
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
+                  >
+                    <ImageIcon className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Drag & drop images here, or click to browse
+                    </p>
                     <Input
                       id="file"
                       type="file"
                       onChange={handleFileUpload}
                       accept="image/*,.pdf,.doc,.docx,.ppt,.pptx"
                       disabled={uploading}
+                      className="cursor-pointer"
                     />
-                    {uploading && <span className="text-sm text-muted-foreground">Uploading...</span>}
+                    {uploading && (
+                      <p className="text-sm text-muted-foreground mt-2">Uploading...</p>
+                    )}
                   </div>
                   {uploadedFile && (
-                    <p className="text-sm text-success">
-                      ✓ {uploadedFile.name} uploaded
+                    <p className="text-sm text-green-600 dark:text-green-400 font-medium">
+                      ✓ {uploadedFile.name} uploaded successfully
                     </p>
                   )}
                 </div>
                 <Button type="submit" className="w-full" disabled={uploading}>
+                  <Pin className="w-4 h-4 mr-2" />
                   Pin to Board
                 </Button>
               </form>
