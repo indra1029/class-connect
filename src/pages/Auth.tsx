@@ -112,16 +112,24 @@ const Auth = () => {
     const email = formData.get("email") as string;
 
     try {
+      // Use the deployed URL for password reset redirect
+      const siteUrl = import.meta.env.VITE_SUPABASE_URL 
+        ? `${window.location.origin}/auth`
+        : `${window.location.origin}/auth`;
+      
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth#type=recovery`,
+        redirectTo: siteUrl,
       });
 
       if (error) throw error;
 
       toast({
         title: "Success!",
-        description: "Password reset link sent to your email. Please check your inbox.",
+        description: "Password reset link sent to your email. Please check your inbox and click the link to reset your password.",
       });
+      
+      // Switch to update-password tab after sending email
+      setActiveTab("signin");
     } catch (error: any) {
       toast({
         variant: "destructive",
