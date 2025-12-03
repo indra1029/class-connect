@@ -48,6 +48,7 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<{ url: string; name: string; type: string } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     fetchNoticeBoard();
@@ -182,6 +183,7 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    setIsDragging(false);
 
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
@@ -205,6 +207,18 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
   };
 
   const handleCreateNotice = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -356,13 +370,19 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
                 <div className="space-y-2">
                   <Label htmlFor="file">Attach Image or File (Optional)</Label>
                   <div 
-                    className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors"
+                    className={`border-2 border-dashed rounded-lg p-6 text-center transition-all ${
+                      isDragging 
+                        ? "border-primary bg-primary/10 scale-[1.02]" 
+                        : "border-border hover:border-primary/50"
+                    }`}
                     onDrop={handleDrop}
                     onDragOver={handleDragOver}
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
                   >
-                    <ImageIcon className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Drag & drop images here, or click to browse
+                    <ImageIcon className={`w-8 h-8 mx-auto mb-2 transition-colors ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
+                    <p className={`text-sm mb-2 transition-colors ${isDragging ? "text-primary font-medium" : "text-muted-foreground"}`}>
+                      {isDragging ? "Drop your image here!" : "Drag & drop images here, or click to browse"}
                     </p>
                     <Input
                       id="file"
@@ -373,7 +393,7 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
                       className="cursor-pointer"
                     />
                     {uploading && (
-                      <p className="text-sm text-muted-foreground mt-2">Uploading...</p>
+                      <p className="text-sm text-primary mt-2 animate-pulse">Uploading...</p>
                     )}
                   </div>
                   {uploadedFile && (
@@ -437,8 +457,12 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => handleUnpin(item.id)}
+                        className="h-8 w-8 hover:bg-amber-100 hover:text-amber-600 dark:hover:bg-amber-900/30"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleUnpin(item.id);
+                        }}
                         title="Unpin from board"
                       >
                         <PinOff className="w-4 h-4" />
@@ -447,7 +471,11 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
                         size="icon"
                         variant="ghost"
                         className="h-8 w-8 hover:bg-destructive/10"
-                        onClick={() => handleDelete(item.id)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDelete(item.id);
+                        }}
                         title="Delete permanently"
                       >
                         <Trash2 className="w-4 h-4 text-destructive" />
