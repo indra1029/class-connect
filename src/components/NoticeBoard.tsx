@@ -291,6 +291,9 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
 
       if (error) throw error;
 
+      // Immediately update UI
+      setItems(prev => prev.filter(item => item.id !== itemId));
+
       toast({
         title: "Success",
         description: "Notice unpinned",
@@ -312,6 +315,9 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
         .eq("id", itemId);
 
       if (error) throw error;
+
+      // Immediately update UI
+      setItems(prev => prev.filter(item => item.id !== itemId));
 
       toast({
         title: "Success",
