@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { GraduationCap, MessageSquare, Users, Lock } from "lucide-react";
+import { MessageSquare, Users, Lock } from "lucide-react";
+import classChatLogo from "@/assets/classchat-logo.png";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -20,9 +21,7 @@ const Index = () => {
       <header className="border-b bg-card/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-hero rounded-xl flex items-center justify-center">
-              <GraduationCap className="w-5 h-5 text-white" />
-            </div>
+            <img src={classChatLogo} alt="ClassChat Logo" className="w-10 h-10 rounded-xl object-cover" />
             <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
               ClassChat
             </h1>
