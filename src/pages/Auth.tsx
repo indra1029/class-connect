@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,8 +11,32 @@ import { GraduationCap } from "lucide-react";
 
 const Auth = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("signin");
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+
+  useEffect(() => {
+    // Check for password recovery mode from URL hash
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const type = hashParams.get('type');
+    
+    if (type === 'recovery') {
+      setIsPasswordRecovery(true);
+      setActiveTab("update-password");
+    }
+
+    // Listen for auth state changes to detect recovery
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true);
+        setActiveTab("update-password");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleSignUp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -89,15 +113,71 @@ const Auth = () => {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth`,
+        redirectTo: `${window.location.origin}/auth#type=recovery`,
       });
 
       if (error) throw error;
 
       toast({
         title: "Success!",
-        description: "Password reset link sent to your email.",
+        description: "Password reset link sent to your email. Please check your inbox.",
       });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setLoading(true);
+
+    const formData = new FormData(e.currentTarget);
+    const newPassword = formData.get("newPassword") as string;
+    const confirmPassword = formData.get("confirmPassword") as string;
+
+    if (newPassword !== confirmPassword) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Passwords do not match",
+      });
+      setLoading(false);
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Password must be at least 6 characters",
+      });
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success!",
+        description: "Your password has been updated. You can now sign in with your new password.",
+      });
+
+      setIsPasswordRecovery(false);
+      setActiveTab("signin");
+      
+      // Clear the URL hash
+      window.history.replaceState(null, '', window.location.pathname);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -124,11 +204,18 @@ const Auth = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="signin" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-6">
-              <TabsTrigger value="signin">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">Sign Up</TabsTrigger>
-              <TabsTrigger value="reset">Reset</TabsTrigger>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className={`grid w-full mb-6 ${isPasswordRecovery ? 'grid-cols-1' : 'grid-cols-3'}`}>
+              {!isPasswordRecovery && (
+                <>
+                  <TabsTrigger value="signin">Sign In</TabsTrigger>
+                  <TabsTrigger value="signup">Sign Up</TabsTrigger>
+                  <TabsTrigger value="reset">Reset</TabsTrigger>
+                </>
+              )}
+              {isPasswordRecovery && (
+                <TabsTrigger value="update-password">Set New Password</TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="signin">
@@ -221,6 +308,41 @@ const Auth = () => {
                 </p>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? "Sending..." : "Send Reset Link"}
+                </Button>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="update-password">
+              <form onSubmit={handleUpdatePassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="newPassword">New Password</Label>
+                  <Input
+                    id="newPassword"
+                    name="newPassword"
+                    type="password"
+                    placeholder="••••••••"
+                    required
+                    minLength={6}
+                    disabled={loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                  <Input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type="password"
+                    placeholder="••••••••"
+                    required
+                    minLength={6}
+                    disabled={loading}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Enter your new password. It must be at least 6 characters long.
+                </p>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Updating..." : "Update Password"}
                 </Button>
               </form>
             </TabsContent>

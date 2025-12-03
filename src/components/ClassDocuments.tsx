@@ -231,11 +231,20 @@ export const ClassDocuments = ({ classId, isAdmin = false }: ClassDocumentsProps
   };
 
   const handleUploadDocument = async () => {
-    if (!uploadFile || !uploadCategory) {
+    if (!uploadFile) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Please select a file and category",
+        description: "Please select a file to upload",
+      });
+      return;
+    }
+
+    if (!uploadCategory) {
+      toast({
+        variant: "destructive",
+        title: "Error", 
+        description: "Please select a category for the document",
       });
       return;
     }
@@ -348,7 +357,13 @@ export const ClassDocuments = ({ classId, isAdmin = false }: ClassDocumentsProps
               </DialogContent>
             </Dialog>
 
-            <Dialog open={uploadDocOpen} onOpenChange={setUploadDocOpen}>
+            <Dialog open={uploadDocOpen} onOpenChange={(open) => {
+              setUploadDocOpen(open);
+              if (!open) {
+                setUploadFile(null);
+                setUploadCategory("");
+              }
+            }}>
               <DialogTrigger asChild>
                 <Button size="sm">
                   <Upload className="w-4 h-4 mr-1" />
@@ -362,7 +377,7 @@ export const ClassDocuments = ({ classId, isAdmin = false }: ClassDocumentsProps
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="upload-category">Select Category *</Label>
-                    <Select value={uploadCategory} onValueChange={setUploadCategory}>
+                    <Select value={uploadCategory} onValueChange={(value) => setUploadCategory(value)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Choose a category" />
                       </SelectTrigger>
@@ -380,11 +395,23 @@ export const ClassDocuments = ({ classId, isAdmin = false }: ClassDocumentsProps
                     <Input
                       id="upload-file"
                       type="file"
-                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setUploadFile(file);
+                        }
+                      }}
                       accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg"
                     />
+                    {uploadFile && (
+                      <p className="text-sm text-green-600 mt-1">✓ {uploadFile.name} selected</p>
+                    )}
                   </div>
-                  <Button onClick={handleUploadDocument} className="w-full">
+                  <Button 
+                    onClick={handleUploadDocument} 
+                    className="w-full"
+                    disabled={!uploadFile || !uploadCategory}
+                  >
                     Upload Document
                   </Button>
                 </div>
