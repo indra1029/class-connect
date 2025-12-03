@@ -9,10 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { GraduationCap, LogOut, Plus, Users, MessageSquare, UserCircle, BarChart3, Network } from "lucide-react";
+import { LogOut, Plus, Users, MessageSquare, UserCircle, BarChart3, Network } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
 import { NoticeBoard } from "@/components/NoticeBoard";
 import { z } from "zod";
+import classChatLogo from "@/assets/classchat-logo.png";
 
 interface Class {
   id: string;
@@ -264,9 +265,7 @@ const Dashboard = () => {
       <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-hero rounded-xl flex items-center justify-center">
-              <GraduationCap className="w-5 h-5 text-white" />
-            </div>
+            <img src={classChatLogo} alt="ClassChat Logo" className="w-10 h-10 rounded-xl object-cover" />
             <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
               ClassChat
             </h1>
@@ -384,7 +383,7 @@ const Dashboard = () => {
             {classes.length === 0 ? (
               <Card className="text-center py-12">
                 <CardContent>
-                  <GraduationCap className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                  <img src={classChatLogo} alt="ClassChat Logo" className="w-16 h-16 mx-auto mb-4 rounded-xl" />
                   <CardTitle className="mb-2">No classes yet</CardTitle>
                   <CardDescription className="mb-6">
                     Create your first class or join one using an invite code

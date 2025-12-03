@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { GraduationCap } from "lucide-react";
+import classChatLogo from "@/assets/classchat-logo.png";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -201,9 +201,7 @@ const Auth = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-secondary/30 to-background p-4">
       <Card className="w-full max-w-md shadow-soft border-border/50">
         <CardHeader className="text-center space-y-2">
-          <div className="mx-auto w-16 h-16 bg-gradient-hero rounded-2xl flex items-center justify-center mb-2">
-            <GraduationCap className="w-8 h-8 text-white" />
-          </div>
+          <img src={classChatLogo} alt="ClassChat Logo" className="mx-auto w-20 h-20 rounded-2xl object-cover mb-2" />
           <CardTitle className="text-3xl font-bold bg-gradient-hero bg-clip-text text-transparent">
             ClassChat
           </CardTitle>
