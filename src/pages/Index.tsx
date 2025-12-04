@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, Users, Lock } from "lucide-react";
-import classChatLogo from "@/assets/classchat-logo.png";
+import classChatLogo from "@/assets/classchat-logo-new.png";
 
 const Index = () => {
   const navigate = useNavigate();

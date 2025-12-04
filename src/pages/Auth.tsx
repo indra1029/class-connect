@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import classChatLogo from "@/assets/classchat-logo.png";
+import classChatLogo from "@/assets/classchat-logo-new.png";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -112,13 +112,11 @@ const Auth = () => {
     const email = formData.get("email") as string;
 
     try {
-      // Use the deployed URL for password reset redirect
-      const siteUrl = import.meta.env.VITE_SUPABASE_URL 
-        ? `${window.location.origin}/auth`
-        : `${window.location.origin}/auth`;
+      // Use the deployed production URL for password reset
+      const redirectUrl = "https://cohortchat-hub.lovable.app/auth";
       
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: siteUrl,
+        redirectTo: redirectUrl,
       });
 
       if (error) throw error;
@@ -128,7 +126,6 @@ const Auth = () => {
         description: "Password reset link sent to your email. Please check your inbox and click the link to reset your password.",
       });
       
-      // Switch to update-password tab after sending email
       setActiveTab("signin");
     } catch (error: any) {
       toast({
