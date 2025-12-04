@@ -13,7 +13,7 @@ import { LogOut, Plus, Users, MessageSquare, UserCircle, BarChart3, Network } fr
 import NotificationBell from "@/components/NotificationBell";
 import { NoticeBoard } from "@/components/NoticeBoard";
 import { z } from "zod";
-import classChatLogo from "@/assets/classchat-logo.png";
+import classChatLogo from "@/assets/classchat-logo-new.png";
 
 interface Class {
   id: string;
@@ -263,36 +263,36 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img src={classChatLogo} alt="ClassChat Logo" className="w-10 h-10 rounded-xl object-cover" />
-            <h1 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
+        <div className="container mx-auto px-2 sm:px-4 py-3 sm:py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <img src={classChatLogo} alt="ClassChat Logo" className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl object-cover" />
+            <h1 className="text-lg sm:text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
               ClassChat
             </h1>
           </div>
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-1 sm:gap-2 items-center overflow-x-auto scrollbar-hide">
             {user && <NotificationBell userId={user.id} />}
-            <Button variant="outline" size="sm" onClick={() => navigate("/profile")}>
-              <UserCircle className="w-4 h-4 mr-2" />
-              Profile
+            <Button variant="outline" size="sm" className="px-2 sm:px-3 whitespace-nowrap" onClick={() => navigate("/profile")}>
+              <UserCircle className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Profile</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate("/messages")}>
-              <MessageSquare className="w-4 h-4 mr-2" />
-              Messages
+            <Button variant="outline" size="sm" className="px-2 sm:px-3 whitespace-nowrap" onClick={() => navigate("/messages")}>
+              <MessageSquare className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Messages</span>
             </Button>
             {isClassCreator && (
-              <Button variant="outline" size="sm" onClick={() => navigate("/admin-directory")}>
-                <Network className="w-4 h-4 mr-2" />
-                CR Network
+              <Button variant="outline" size="sm" className="px-2 sm:px-3 whitespace-nowrap" onClick={() => navigate("/admin-directory")}>
+                <Network className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">CR Network</span>
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => navigate("/analytics")}>
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Analytics
+            <Button variant="outline" size="sm" className="px-2 sm:px-3 whitespace-nowrap" onClick={() => navigate("/analytics")}>
+              <BarChart3 className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Analytics</span>
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
+            <Button variant="ghost" size="sm" className="px-2 sm:px-3 whitespace-nowrap" onClick={handleSignOut}>
+              <LogOut className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Sign Out</span>
             </Button>
           </div>
         </div>

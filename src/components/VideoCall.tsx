@@ -232,15 +232,16 @@ const VideoCall = ({ classId, userId }: VideoCallProps) => {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-        <div className="relative aspect-video bg-secondary rounded-lg overflow-hidden">
+    <div className="fixed inset-0 bg-black/95 z-50 flex flex-col overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 overflow-y-auto">
+        <div className="relative aspect-video bg-secondary rounded-lg overflow-hidden min-h-0">
           <video
             ref={localVideoRef}
             autoPlay
             muted
             playsInline
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
+            style={{ maxHeight: 'calc(100vh - 120px)' }}
           />
           <div className="absolute bottom-2 left-2 text-white bg-black/50 px-2 py-1 rounded text-sm">
             You {isScreenSharing && "(Screen)"}
@@ -248,7 +249,7 @@ const VideoCall = ({ classId, userId }: VideoCallProps) => {
         </div>
       </div>
 
-      <div className="p-4 bg-card/50 backdrop-blur-sm flex justify-center gap-4">
+      <div className="flex-shrink-0 p-4 bg-card/50 backdrop-blur-sm flex justify-center gap-4 border-t border-border/50">
         <Button
           variant={isMuted ? "destructive" : "secondary"}
           size="icon"
