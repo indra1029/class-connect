@@ -12,10 +12,18 @@ import {
   Video,
   VideoOff,
   MonitorUp,
+  MonitorOff,
   PhoneOff,
   Users,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+// Detect if screen sharing is supported
+const isScreenShareSupported = () => {
+  return typeof navigator !== 'undefined' && 
+         navigator.mediaDevices && 
+         typeof navigator.mediaDevices.getDisplayMedia === 'function';
+};
 
 interface Participant {
   user_id: string;
@@ -37,6 +45,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const canScreenShare = isScreenShareSupported();
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -201,6 +210,15 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   };
 
   const toggleScreenShare = async () => {
+    if (!canScreenShare) {
+      toast({
+        variant: "destructive",
+        title: "Not Supported",
+        description: "Screen sharing is not supported on this device",
+      });
+      return;
+    }
+
     try {
       if (!isScreenSharing) {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -225,13 +243,21 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
       } else {
         stopScreenShare();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Screen share error:", error);
-      toast({
-        variant: "destructive",
-        title: "Screen Share Error",
-        description: "Failed to start screen sharing",
-      });
+      if (error.name === 'NotAllowedError') {
+        toast({
+          variant: "destructive",
+          title: "Cancelled",
+          description: "Screen sharing was cancelled",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Screen Share Error",
+          description: "Failed to start screen sharing",
+        });
+      }
     }
   };
 
@@ -343,14 +369,16 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
               {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
             </Button>
 
-            <Button
-              variant={isScreenSharing ? "default" : "secondary"}
-              size="icon"
-              onClick={toggleScreenShare}
-              className="rounded-full w-12 h-12"
-            >
-              <MonitorUp className="w-5 h-5" />
-            </Button>
+            {canScreenShare && (
+              <Button
+                variant={isScreenSharing ? "default" : "secondary"}
+                size="icon"
+                onClick={toggleScreenShare}
+                className="rounded-full w-12 h-12"
+              >
+                {isScreenSharing ? <MonitorOff className="w-5 h-5" /> : <MonitorUp className="w-5 h-5" />}
+              </Button>
+            )}
 
             <Button
               variant="secondary"

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ interface ClassData {
 const ClassRoom = () => {
   const { classId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [classData, setClassData] = useState<ClassData | null>(null);
@@ -65,6 +66,38 @@ const ClassRoom = () => {
       }
     });
   }, [navigate]);
+
+  // Handle join call from notification
+  useEffect(() => {
+    const joinCallId = searchParams.get('joinCall');
+    if (joinCallId && user) {
+      // Check if call is still active
+      supabase
+        .from("video_call_sessions")
+        .select("is_active")
+        .eq("id", joinCallId)
+        .eq("class_id", classId)
+        .single()
+        .then(({ data }) => {
+          if (data?.is_active) {
+            setShowVideoCall(true);
+            toast({
+              title: "Joining call...",
+              description: "Connecting to video call",
+            });
+          } else {
+            toast({
+              variant: "destructive",
+              title: "Call ended",
+              description: "This video call has already ended",
+            });
+          }
+          // Clear the joinCall param
+          searchParams.delete('joinCall');
+          setSearchParams(searchParams);
+        });
+    }
+  }, [searchParams, user, classId]);
 
   useEffect(() => {
     if (user && classId) {
@@ -369,18 +402,19 @@ const ClassRoom = () => {
                 )}
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowVideoCall(true)}>
-                <Video className="w-4 h-4 mr-2" />
-                Call
+            <div className="flex gap-1 sm:gap-2 flex-wrap justify-end">
+              <Button variant="outline" size="sm" onClick={() => setShowVideoCall(true)} className="text-xs sm:text-sm">
+                <Video className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Call</span>
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setShowMembers(!showMembers)}>
-                <Users className="w-4 h-4 mr-2" />
-                Members
+              <Button variant="outline" size="sm" onClick={() => setShowMembers(!showMembers)} className="text-xs sm:text-sm">
+                <Users className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Members</span>
               </Button>
-              <Button variant="outline" size="sm" onClick={copyInviteCode}>
-                {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                {classData?.invite_code}
+              <Button variant="outline" size="sm" onClick={copyInviteCode} className="text-xs sm:text-sm">
+                {copied ? <Check className="w-4 h-4 sm:mr-2" /> : <Copy className="w-4 h-4 sm:mr-2" />}
+                <span className="hidden sm:inline">{classData?.invite_code}</span>
+                <span className="sm:hidden text-[10px]">{classData?.invite_code?.slice(0, 8)}...</span>
               </Button>
             </div>
           </div>
@@ -394,34 +428,39 @@ const ClassRoom = () => {
           </div>
         )}
         
-        <div className="flex-1 flex flex-col max-w-6xl">
+        <div className="flex-1 flex flex-col max-w-6xl min-w-0">
           <Tabs defaultValue="chat" className="flex-1 flex flex-col">
-            <TabsList className="grid w-full grid-cols-6 mb-4">
-              <TabsTrigger value="chat" className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4" />
-                Chat
-              </TabsTrigger>
-              <TabsTrigger value="announcements" className="flex items-center gap-2">
-                <Megaphone className="w-4 h-4" />
-                Announcements
-              </TabsTrigger>
-              <TabsTrigger value="presentations" className="flex items-center gap-2">
-                <Presentation className="w-4 h-4" />
-                Presentations
-              </TabsTrigger>
-              <TabsTrigger value="polls" className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4" />
-                Polls
-              </TabsTrigger>
-              <TabsTrigger value="calendar" className="flex items-center gap-2">
-                <CalendarIcon className="w-4 h-4" />
-                Calendar
-              </TabsTrigger>
-              <TabsTrigger value="documents" className="flex items-center gap-2">
-                <Paperclip className="w-4 h-4" />
-                Documents
-              </TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto mb-4 -mx-4 px-4 scrollbar-hide">
+              <TabsList className="inline-flex w-max min-w-full sm:grid sm:w-full sm:grid-cols-6 gap-1">
+                <TabsTrigger value="chat" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
+                  <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />
+                  Chat
+                </TabsTrigger>
+                <TabsTrigger value="announcements" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
+                  <Megaphone className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="hidden xs:inline">Announcements</span>
+                  <span className="xs:hidden">Announce</span>
+                </TabsTrigger>
+                <TabsTrigger value="presentations" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
+                  <Presentation className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="hidden xs:inline">Presentations</span>
+                  <span className="xs:hidden">Present</span>
+                </TabsTrigger>
+                <TabsTrigger value="polls" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
+                  <BarChart3 className="w-3 h-3 sm:w-4 sm:h-4" />
+                  Polls
+                </TabsTrigger>
+                <TabsTrigger value="calendar" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
+                  <CalendarIcon className="w-3 h-3 sm:w-4 sm:h-4" />
+                  Calendar
+                </TabsTrigger>
+                <TabsTrigger value="documents" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
+                  <Paperclip className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="hidden xs:inline">Documents</span>
+                  <span className="xs:hidden">Docs</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="chat" className="flex-1 flex flex-col mt-0">
               <div className="flex-1 overflow-y-auto mb-4 space-y-4">
