@@ -95,6 +95,7 @@ export default {
   		},
   		fontFamily: {
   			sans: [
+  				'Poppins',
   				'ui-sans-serif',
   				'system-ui',
   				'sans-serif',
@@ -104,6 +105,7 @@ export default {
   				'Noto Color Emoji'
   			],
   			serif: [
+  				'Playfair Display',
   				'ui-serif',
   				'Georgia',
   				'Cambria',
