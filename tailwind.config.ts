@@ -114,6 +114,7 @@ export default {
   				'serif'
   			],
   			mono: [
+  				'Cascadia Code',
   				'ui-monospace',
   				'SFMono-Regular',
   				'Menlo',
