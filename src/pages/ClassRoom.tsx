@@ -388,158 +388,171 @@ const ClassRoom = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
+        <div className="container mx-auto px-3 sm:px-4 py-2 sm:py-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+              <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")} className="shrink-0 px-2 sm:px-3">
+                <ArrowLeft className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">Back</span>
               </Button>
-              <div>
-                <h1 className="text-xl font-bold text-foreground">{classData?.name}</h1>
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-xl font-bold text-foreground truncate">{classData?.name}</h1>
                 {classData?.description && (
-                  <p className="text-sm text-muted-foreground">{classData.description}</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground truncate">{classData.description}</p>
                 )}
               </div>
             </div>
-            <div className="flex gap-1 sm:gap-2 flex-wrap justify-end">
-              <Button variant="outline" size="sm" onClick={() => setShowVideoCall(true)} className="text-xs sm:text-sm">
-                <Video className="w-4 h-4 sm:mr-2" />
-                <span className="hidden sm:inline">Call</span>
+            <div className="flex gap-1.5 sm:gap-2 shrink-0">
+              <Button 
+                variant={showVideoCall ? "default" : "outline"} 
+                size="sm" 
+                onClick={() => setShowVideoCall(true)} 
+                className="h-8 sm:h-9 px-2 sm:px-3"
+              >
+                <Video className="w-4 h-4" />
+                <span className="hidden sm:inline ml-1.5">Call</span>
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setShowMembers(!showMembers)} className="text-xs sm:text-sm">
-                <Users className="w-4 h-4 sm:mr-2" />
-                <span className="hidden sm:inline">Members</span>
+              <Button 
+                variant={showMembers ? "default" : "outline"} 
+                size="sm" 
+                onClick={() => setShowMembers(!showMembers)} 
+                className="h-8 sm:h-9 px-2 sm:px-3"
+              >
+                <Users className="w-4 h-4" />
+                <span className="hidden sm:inline ml-1.5">Members</span>
               </Button>
-              <Button variant="outline" size="sm" onClick={copyInviteCode} className="text-xs sm:text-sm">
-                {copied ? <Check className="w-4 h-4 sm:mr-2" /> : <Copy className="w-4 h-4 sm:mr-2" />}
-                <span className="hidden sm:inline">{classData?.invite_code}</span>
-                <span className="sm:hidden text-[10px]">{classData?.invite_code?.slice(0, 8)}...</span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={copyInviteCode} 
+                className="h-8 sm:h-9 px-2 sm:px-3"
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <span className="hidden lg:inline ml-1.5 font-mono text-xs">{classData?.invite_code}</span>
               </Button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-4 py-6 flex gap-6">
+      <main className="flex-1 container mx-auto px-2 sm:px-4 py-3 sm:py-6 flex flex-col sm:flex-row gap-3 sm:gap-6 overflow-hidden">
         {showMembers && (
-          <div className="w-80 flex-shrink-0">
+          <div className="w-full sm:w-72 md:w-80 shrink-0 order-first sm:order-none">
             <ClassMembers classId={classId!} user={user!} isAdmin={isAdmin} />
           </div>
         )}
         
-        <div className="flex-1 flex flex-col max-w-6xl min-w-0">
-          <Tabs defaultValue="chat" className="flex-1 flex flex-col">
-            <div className="overflow-x-auto mb-4 -mx-4 px-4 scrollbar-hide">
-              <TabsList className="inline-flex w-max min-w-full sm:grid sm:w-full sm:grid-cols-6 gap-1">
-                <TabsTrigger value="chat" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
-                  <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />
-                  Chat
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <Tabs defaultValue="chat" className="flex-1 flex flex-col min-h-0">
+            <div className="overflow-x-auto mb-3 sm:mb-4 -mx-2 px-2 sm:-mx-0 sm:px-0 scrollbar-hide shrink-0">
+              <TabsList className="inline-flex gap-0.5 sm:gap-1 bg-muted/50 p-1 rounded-lg">
+                <TabsTrigger value="chat" className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm rounded-md data-[state=active]:bg-background">
+                  <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Chat</span>
                 </TabsTrigger>
-                <TabsTrigger value="announcements" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
-                  <Megaphone className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="hidden xs:inline">Announcements</span>
-                  <span className="xs:hidden">Announce</span>
+                <TabsTrigger value="announcements" className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm rounded-md data-[state=active]:bg-background">
+                  <Megaphone className="w-3.5 h-3.5 sm:w-4 sm:h-4 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Announce</span>
                 </TabsTrigger>
-                <TabsTrigger value="presentations" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
-                  <Presentation className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="hidden xs:inline">Presentations</span>
-                  <span className="xs:hidden">Present</span>
+                <TabsTrigger value="presentations" className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm rounded-md data-[state=active]:bg-background">
+                  <Presentation className="w-3.5 h-3.5 sm:w-4 sm:h-4 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Present</span>
                 </TabsTrigger>
-                <TabsTrigger value="polls" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
-                  <BarChart3 className="w-3 h-3 sm:w-4 sm:h-4" />
-                  Polls
+                <TabsTrigger value="polls" className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm rounded-md data-[state=active]:bg-background">
+                  <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Polls</span>
                 </TabsTrigger>
-                <TabsTrigger value="calendar" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
-                  <CalendarIcon className="w-3 h-3 sm:w-4 sm:h-4" />
-                  Calendar
+                <TabsTrigger value="calendar" className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm rounded-md data-[state=active]:bg-background">
+                  <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Calendar</span>
                 </TabsTrigger>
-                <TabsTrigger value="documents" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm whitespace-nowrap">
-                  <Paperclip className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="hidden xs:inline">Documents</span>
-                  <span className="xs:hidden">Docs</span>
+                <TabsTrigger value="documents" className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm rounded-md data-[state=active]:bg-background">
+                  <Paperclip className="w-3.5 h-3.5 sm:w-4 sm:h-4 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Docs</span>
                 </TabsTrigger>
               </TabsList>
             </div>
 
-            <TabsContent value="chat" className="flex-1 flex flex-col mt-0">
-              <div className="flex-1 overflow-y-auto mb-4 space-y-4">
-          {messages.length === 0 ? (
-            <Card className="text-center py-12">
-              <CardContent>
-                <Users className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-                <CardTitle className="mb-2">No messages yet</CardTitle>
-                <CardDescription>
-                  Be the first to send a message in this class!
-                </CardDescription>
-              </CardContent>
-            </Card>
-          ) : (
-            messages.map((message) => {
-              const isOwn = message.user_id === user?.id;
-              return (
-                <div
-                  key={message.id}
-                  className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""} group`}
-                >
-                  <Avatar className="w-8 h-8 flex-shrink-0">
-                    <AvatarImage src={message.profiles.avatar_url || ""} />
-                    <AvatarFallback className="bg-gradient-hero text-white text-xs">
-                      {message.profiles.full_name.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className={`flex flex-col ${isOwn ? "items-end" : ""} max-w-[70%]`}>
-                    <span className="text-xs text-muted-foreground mb-1">
-                      {message.profiles.full_name}
-                    </span>
-                    <div className="relative">
+            <TabsContent value="chat" className="flex-1 flex flex-col mt-0 min-h-0">
+              <div className="flex-1 overflow-y-auto mb-3 sm:mb-4 space-y-3 sm:space-y-4">
+                {messages.length === 0 ? (
+                  <Card className="text-center py-8 sm:py-12">
+                    <CardContent>
+                      <Users className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 sm:mb-4 text-muted-foreground" />
+                      <CardTitle className="mb-2 text-base sm:text-xl">No messages yet</CardTitle>
+                      <CardDescription className="text-xs sm:text-sm">
+                        Be the first to send a message in this class!
+                      </CardDescription>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  messages.map((message) => {
+                    const isOwn = message.user_id === user?.id;
+                    return (
                       <div
-                        className={`rounded-2xl px-4 py-2 ${
-                          isOwn
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-foreground"
-                        }`}
+                        key={message.id}
+                        className={`flex gap-2 sm:gap-3 ${isOwn ? "flex-row-reverse" : ""} group`}
                       >
-                        {message.file_url ? (
-                          <a
-                            href={message.file_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline flex items-center gap-2"
-                          >
-                            <Paperclip className="w-4 h-4" />
-                            {message.file_name || message.content}
-                          </a>
-                        ) : (
-                          <p className="text-sm break-words">{message.content}</p>
-                        )}
+                        <Avatar className="w-7 h-7 sm:w-8 sm:h-8 flex-shrink-0">
+                          <AvatarImage src={message.profiles.avatar_url || ""} />
+                          <AvatarFallback className="bg-gradient-hero text-white text-[10px] sm:text-xs">
+                            {message.profiles.full_name.charAt(0).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className={`flex flex-col ${isOwn ? "items-end" : ""} max-w-[75%] sm:max-w-[70%]`}>
+                          <span className="text-[10px] sm:text-xs text-muted-foreground mb-0.5 sm:mb-1">
+                            {message.profiles.full_name}
+                          </span>
+                          <div className="relative">
+                            <div
+                              className={`rounded-xl sm:rounded-2xl px-3 sm:px-4 py-1.5 sm:py-2 ${
+                                isOwn
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted text-foreground"
+                              }`}
+                            >
+                              {message.file_url ? (
+                                <a
+                                  href={message.file_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm"
+                                >
+                                  <Paperclip className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                  <span className="truncate max-w-[150px] sm:max-w-none">
+                                    {message.file_name || message.content}
+                                  </span>
+                                </a>
+                              ) : (
+                                <p className="text-xs sm:text-sm break-words">{message.content}</p>
+                              )}
+                            </div>
+                            {isAdmin && (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="absolute -right-8 sm:-right-10 top-0 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 sm:h-8 sm:w-8 p-0"
+                                onClick={() => handleDeleteMessage(message.id)}
+                              >
+                                <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                              </Button>
+                            )}
+                          </div>
+                          <span className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">
+                            {new Date(message.created_at).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
                       </div>
-                      {isAdmin && (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="absolute -right-10 top-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => handleDeleteMessage(message.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                    <span className="text-xs text-muted-foreground mt-1">
-                      {new Date(message.created_at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                </div>
-              );
-            })
-          )}
+                    );
+                  })
+                )}
                 <div ref={messagesEndRef} />
               </div>
 
-              <form onSubmit={handleSendMessage} className="flex gap-2">
+              <form onSubmit={handleSendMessage} className="flex gap-1.5 sm:gap-2 shrink-0">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -551,11 +564,12 @@ const ClassRoom = () => {
                   size="icon"
                   variant="outline"
                   onClick={() => fileInputRef.current?.click()}
+                  className="h-9 w-9 sm:h-10 sm:w-10 shrink-0"
                 >
                   <Paperclip className="w-4 h-4" />
                 </Button>
                 <EmojiPicker onEmojiSelect={(emoji) => setNewMessage((prev) => prev + emoji)}>
-                  <Button type="button" size="icon" variant="outline">
+                  <Button type="button" size="icon" variant="outline" className="h-9 w-9 sm:h-10 sm:w-10 shrink-0">
                     <Smile className="w-4 h-4" />
                   </Button>
                 </EmojiPicker>
@@ -563,9 +577,9 @@ const ClassRoom = () => {
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder="Type a message..."
-                  className="flex-1"
+                  className="flex-1 h-9 sm:h-10 text-sm"
                 />
-                <Button type="submit" size="icon">
+                <Button type="submit" size="icon" className="h-9 w-9 sm:h-10 sm:w-10 shrink-0">
                   <Send className="w-4 h-4" />
                 </Button>
               </form>

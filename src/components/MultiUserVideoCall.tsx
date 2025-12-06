@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Video, VideoOff, Mic, MicOff, PhoneOff, Monitor, Users, Maximize, MonitorOff } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Video, VideoOff, Mic, MicOff, PhoneOff, Monitor, Users, MonitorOff, X } from "lucide-react";
 import { toast } from "sonner";
 
 interface MultiUserVideoCallProps {
@@ -15,6 +15,7 @@ interface Participant {
   user_id: string;
   is_active: boolean;
   full_name?: string;
+  avatar_url?: string | null;
 }
 
 // Detect if screen sharing is supported
@@ -31,16 +32,35 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [className, setClassName] = useState<string>("");
+  const [callDuration, setCallDuration] = useState<string>("00:00");
+  const [showParticipants, setShowParticipants] = useState(false);
   const canScreenShare = isScreenShareSupported();
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const localStream = useRef<MediaStream | null>(null);
   const screenStream = useRef<MediaStream | null>(null);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const callStartTime = useRef<number>(Date.now());
+  const durationInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     initializeCall();
-    return () => cleanup();
+    
+    // Start duration timer
+    callStartTime.current = Date.now();
+    durationInterval.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - callStartTime.current) / 1000);
+      const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+      const secs = (elapsed % 60).toString().padStart(2, '0');
+      setCallDuration(`${mins}:${secs}`);
+    }, 1000);
+    
+    return () => {
+      cleanup();
+      if (durationInterval.current) {
+        clearInterval(durationInterval.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -209,18 +229,19 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
 
       if (error) throw error;
 
-      // Fetch user names
+      // Fetch user names and avatars
       const userIds = data?.map(p => p.user_id) || [];
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("id, full_name")
+        .select("id, full_name, avatar_url")
         .in("id", userIds);
 
-      const profileMap = new Map(profiles?.map(p => [p.id, p.full_name]));
+      const profileMap = new Map(profiles?.map(p => [p.id, p]));
       
       const participantsWithNames = data?.map(p => ({
         ...p,
-        full_name: profileMap.get(p.user_id),
+        full_name: profileMap.get(p.user_id)?.full_name,
+        avatar_url: profileMap.get(p.user_id)?.avatar_url,
       })) || [];
 
       setParticipants(participantsWithNames);
@@ -352,155 +373,183 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
     peerConnections.current.clear();
   };
 
-  const toggleFullscreen = async () => {
-    try {
-      const elem = document.querySelector('.video-call-container') as HTMLElement;
-      if (!elem) return;
-      
-      if (!document.fullscreenElement) {
-        if (elem.requestFullscreen) {
-          await elem.requestFullscreen();
-        } else if ((elem as any).webkitRequestFullscreen) {
-          await (elem as any).webkitRequestFullscreen();
-        } else if ((elem as any).msRequestFullscreen) {
-          await (elem as any).msRequestFullscreen();
-        }
-      } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if ((document as any).webkitExitFullscreen) {
-          await (document as any).webkitExitFullscreen();
-        } else if ((document as any).msExitFullscreen) {
-          await (document as any).msExitFullscreen();
-        }
-      }
-    } catch (err) {
-      toast.error("Could not toggle fullscreen");
-    }
+  // Calculate grid layout based on participant count
+  const getGridClass = () => {
+    const count = participants.length;
+    if (count <= 1) return "grid-cols-1";
+    if (count === 2) return "grid-cols-2";
+    if (count <= 4) return "grid-cols-2";
+    if (count <= 6) return "grid-cols-2 sm:grid-cols-3";
+    return "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
   };
 
+  // Get current user from participants
+  const currentUser = participants.find(p => p.user_id === userId);
+  const otherParticipants = participants.filter(p => p.user_id !== userId);
+
   return (
-    <div className="video-call-container fixed inset-0 z-50 bg-black flex flex-col">
-      {/* Header with controls */}
-      <div className="bg-gradient-to-r from-primary/90 to-secondary/90 backdrop-blur-sm px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between shadow-lg">
-        <div className="flex items-center gap-2 sm:gap-3">
-          <div className="flex items-center gap-1 sm:gap-2 text-white">
-            <Users className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="font-semibold text-base sm:text-lg">{participants.length}</span>
-            <span className="text-xs sm:text-sm opacity-90">participant{participants.length !== 1 ? 's' : ''}</span>
-          </div>
+    <div className="video-call-container fixed inset-0 z-50 bg-[hsl(220,25%,8%)] flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="bg-[hsl(220,25%,12%)] px-3 py-2 flex items-center justify-between shrink-0">
+        <button 
+          onClick={() => setShowParticipants(false)}
+          className="p-2 text-muted-foreground hover:text-foreground"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        
+        <div className="text-center">
+          <h2 className="text-sm sm:text-base font-medium text-foreground">{className || "Video Call"}</h2>
+          <span className="text-xs text-muted-foreground">{callDuration}</span>
         </div>
         
-        <div className="flex items-center gap-1 sm:gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleFullscreen}
-            className="text-white hover:bg-white/20 text-xs sm:text-sm px-2 sm:px-3"
-          >
-            <Maximize className="w-4 h-4 sm:mr-1" />
-            <span className="hidden sm:inline">Fullscreen</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={endCall}
-            className="text-white hover:bg-white/20 text-xs sm:text-sm px-2 sm:px-3"
-          >
-            Leave
-          </Button>
-        </div>
+        <button 
+          onClick={() => setShowParticipants(!showParticipants)}
+          className="p-2 text-muted-foreground hover:text-foreground"
+        >
+          <Users className="w-5 h-5" />
+        </button>
       </div>
 
-      {/* Main video area */}
-      <div className="flex-1 relative overflow-hidden">
-        <video
-          ref={localVideoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-full h-full object-cover"
-        />
-        
-        {/* Status overlay */}
-        <div className="absolute top-2 sm:top-4 left-2 sm:left-4 flex flex-col gap-2">
-          <div className="bg-black/70 text-white px-3 sm:px-4 py-1 sm:py-2 rounded-full text-xs sm:text-sm font-medium backdrop-blur-sm">
-            You {isVideoOff && "• Camera Off"}
-          </div>
-          {isScreenSharing && (
-            <div className="bg-primary/80 text-white px-3 sm:px-4 py-1 sm:py-2 rounded-full text-xs sm:text-sm font-medium backdrop-blur-sm">
-              📺 Sharing Screen
+      {/* Video Grid - WhatsApp style */}
+      <div className="flex-1 overflow-hidden p-2 sm:p-4">
+        <div className={`grid ${getGridClass()} gap-2 sm:gap-3 h-full auto-rows-fr`}>
+          {/* Current user's video */}
+          <div className="relative rounded-xl overflow-hidden bg-[hsl(220,25%,15%)] border-2 border-primary/60">
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`w-full h-full object-cover ${isVideoOff ? 'hidden' : ''}`}
+            />
+            {isVideoOff && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Avatar className="w-16 h-16 sm:w-20 sm:h-20">
+                  <AvatarImage src={currentUser?.avatar_url || ""} />
+                  <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
+                    {currentUser?.full_name?.charAt(0).toUpperCase() || "Y"}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+            )}
+            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+              <span className="text-xs sm:text-sm font-medium text-primary bg-black/50 px-2 py-0.5 rounded-full">
+                You
+              </span>
+              {isMuted && (
+                <span className="text-xs bg-destructive/80 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <MicOff className="w-3 h-3" />
+                </span>
+              )}
             </div>
-          )}
-        </div>
-
-        {/* Participants grid */}
-        {participants.length > 1 && (
-          <div className="absolute top-2 sm:top-4 right-2 sm:right-4 flex flex-col gap-2 max-h-[calc(100%-120px)] overflow-y-auto">
-            {participants
-              .filter(p => p.user_id !== userId)
-              .map((participant) => (
-                <Card
-                  key={participant.user_id}
-                  className="w-28 sm:w-40 h-20 sm:h-28 bg-muted/90 backdrop-blur-sm border-2 border-primary/50"
-                >
-                  <CardContent className="p-1 sm:p-2 h-full flex flex-col items-center justify-center">
-                    <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-gradient-hero flex items-center justify-center text-white font-bold text-sm sm:text-lg mb-1">
-                      {participant.full_name?.charAt(0).toUpperCase() || "?"}
-                    </div>
-                    <p className="text-[10px] sm:text-xs font-medium text-center truncate w-full">
-                      {participant.full_name || "Participant"}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
+            {isScreenSharing && (
+              <div className="absolute top-2 left-2 bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full">
+                📺 Sharing
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Other participants */}
+          {otherParticipants.map((participant) => (
+            <div 
+              key={participant.user_id}
+              className="relative rounded-xl overflow-hidden bg-[hsl(220,25%,15%)] border-2 border-accent/40"
+            >
+              {/* Placeholder for remote video - show avatar for now */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Avatar className="w-16 h-16 sm:w-20 sm:h-20">
+                  <AvatarImage src={participant.avatar_url || ""} />
+                  <AvatarFallback className="bg-accent text-accent-foreground text-2xl">
+                    {participant.full_name?.charAt(0).toUpperCase() || "?"}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+              <div className="absolute bottom-2 left-2 right-2">
+                <span className="text-xs sm:text-sm font-medium text-accent bg-black/50 px-2 py-0.5 rounded-full">
+                  {participant.full_name || "Participant"}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Bottom control bar */}
-      <div className="bg-gradient-to-r from-primary/90 to-secondary/90 backdrop-blur-sm px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-center gap-2 sm:gap-3 shadow-lg">
-        <Button
-          variant={isMuted ? "destructive" : "secondary"}
-          size="lg"
+      {/* Participants panel (slide up on mobile) */}
+      {showParticipants && (
+        <div className="absolute bottom-20 left-0 right-0 bg-[hsl(220,25%,12%)] rounded-t-2xl p-4 max-h-[50vh] overflow-y-auto animate-in slide-in-from-bottom">
+          <div className="text-center mb-3">
+            <span className="text-sm text-muted-foreground">{participants.length} connected</span>
+          </div>
+          <div className="space-y-2">
+            {participants.map((participant) => (
+              <div 
+                key={participant.user_id}
+                className="flex items-center gap-3 p-2 rounded-lg bg-[hsl(220,25%,18%)]"
+              >
+                <Avatar className="w-10 h-10">
+                  <AvatarImage src={participant.avatar_url || ""} />
+                  <AvatarFallback className="bg-primary text-primary-foreground">
+                    {participant.full_name?.charAt(0).toUpperCase() || "?"}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-sm font-medium text-foreground">
+                  {participant.full_name || "Participant"}
+                  {participant.user_id === userId && " (You)"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Bottom control bar - WhatsApp style */}
+      <div className="bg-[hsl(220,25%,12%)] px-4 py-3 sm:py-4 flex items-center justify-center gap-4 sm:gap-6 shrink-0">
+        <button
           onClick={toggleMute}
-          className="rounded-full w-12 h-12 sm:w-14 sm:h-14 shadow-lg hover:scale-110 transition-transform"
+          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
+            isMuted 
+              ? 'bg-destructive/20 text-destructive' 
+              : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
+          }`}
           title={isMuted ? "Unmute" : "Mute"}
         >
           {isMuted ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6" />}
-        </Button>
+        </button>
 
-        <Button
-          variant={isVideoOff ? "destructive" : "secondary"}
-          size="lg"
+        <button
           onClick={toggleVideo}
-          className="rounded-full w-12 h-12 sm:w-14 sm:h-14 shadow-lg hover:scale-110 transition-transform"
+          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
+            isVideoOff 
+              ? 'bg-destructive/20 text-destructive' 
+              : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
+          }`}
           title={isVideoOff ? "Turn on camera" : "Turn off camera"}
         >
           {isVideoOff ? <VideoOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Video className="w-5 h-5 sm:w-6 sm:h-6" />}
-        </Button>
+        </button>
 
         {canScreenShare && (
-          <Button
-            variant={isScreenSharing ? "default" : "secondary"}
-            size="lg"
+          <button
             onClick={toggleScreenShare}
-            className="rounded-full w-12 h-12 sm:w-14 sm:h-14 shadow-lg hover:scale-110 transition-transform"
+            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
+              isScreenSharing 
+                ? 'bg-primary text-primary-foreground' 
+                : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
+            }`}
             title={isScreenSharing ? "Stop sharing" : "Share screen"}
           >
             {isScreenSharing ? <MonitorOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Monitor className="w-5 h-5 sm:w-6 sm:h-6" />}
-          </Button>
+          </button>
         )}
 
-        <Button
-          variant="destructive"
-          size="lg"
+        <button
           onClick={endCall}
-          className="rounded-full w-12 h-12 sm:w-14 sm:h-14 shadow-lg hover:scale-110 transition-transform ml-2 sm:ml-4"
+          className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:bg-destructive/90 transition-all"
           title="End call"
         >
-          <PhoneOff className="w-5 h-5 sm:w-6 sm:h-6" />
-        </Button>
+          <PhoneOff className="w-6 h-6 sm:w-7 sm:h-7" />
+        </button>
       </div>
     </div>
   );

@@ -163,41 +163,42 @@ export const ClassMembers = ({ classId, user, isAdmin }: ClassMembersProps) => {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <UserPlus className="w-5 h-5" />
+    <Card className="h-fit max-h-[60vh] sm:max-h-none overflow-hidden flex flex-col">
+      <CardHeader className="py-3 sm:py-4 px-3 sm:px-4 shrink-0">
+        <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+          <UserPlus className="w-4 h-4 sm:w-5 sm:h-5" />
           Class Members ({members.length})
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-1.5 sm:space-y-2 overflow-y-auto px-3 sm:px-4 pb-3 sm:pb-4">
         {members.map((member) => (
           <div
             key={member.id}
-            className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+            className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50 gap-2"
           >
-            <div className="flex items-center gap-3">
-              <Avatar>
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <Avatar className="w-8 h-8 sm:w-10 sm:h-10 shrink-0">
                 <AvatarImage src={member.profiles.avatar_url || ""} />
-                <AvatarFallback className="bg-gradient-hero text-white">
+                <AvatarFallback className="bg-gradient-hero text-white text-xs sm:text-sm">
                   {member.profiles.full_name.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <div>
-                <p className="font-medium">{member.profiles.full_name}</p>
+              <div className="min-w-0">
+                <p className="font-medium text-sm sm:text-base truncate">{member.profiles.full_name}</p>
                 {member.role === "admin" && (
-                  <Badge variant="secondary" className="text-xs">Admin</Badge>
+                  <Badge variant="secondary" className="text-[10px] sm:text-xs px-1.5 py-0">Admin</Badge>
                 )}
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-1 sm:gap-2 shrink-0">
               {member.user_id !== user.id && (
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => handleSendRequest(member.user_id)}
+                  className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                 >
-                  <MessageSquare className="w-4 h-4" />
+                  <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </Button>
               )}
               {isAdmin && member.user_id !== user.id && (
@@ -205,8 +206,9 @@ export const ClassMembers = ({ classId, user, isAdmin }: ClassMembersProps) => {
                   size="sm"
                   variant="destructive"
                   onClick={() => handleRemoveMember(member.id, member.user_id)}
+                  className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </Button>
               )}
             </div>
