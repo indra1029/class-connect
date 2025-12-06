@@ -74,13 +74,6 @@ export type Database = {
             foreignKeyName: "announcements_class_id_fkey"
             columns: ["class_id"]
             isOneToOne: false
-            referencedRelation: "class_analytics"
-            referencedColumns: ["class_id"]
-          },
-          {
-            foreignKeyName: "announcements_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
             referencedRelation: "classes"
             referencedColumns: ["id"]
           },
@@ -119,13 +112,6 @@ export type Database = {
             foreignKeyName: "calendar_events_class_id_fkey"
             columns: ["class_id"]
             isOneToOne: false
-            referencedRelation: "class_analytics"
-            referencedColumns: ["class_id"]
-          },
-          {
-            foreignKeyName: "calendar_events_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
             referencedRelation: "classes"
             referencedColumns: ["id"]
           },
@@ -154,13 +140,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "class_members_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
-            referencedRelation: "class_analytics"
-            referencedColumns: ["class_id"]
-          },
           {
             foreignKeyName: "class_members_class_id_fkey"
             columns: ["class_id"]
@@ -298,13 +277,6 @@ export type Database = {
             foreignKeyName: "document_categories_class_id_fkey"
             columns: ["class_id"]
             isOneToOne: false
-            referencedRelation: "class_analytics"
-            referencedColumns: ["class_id"]
-          },
-          {
-            foreignKeyName: "document_categories_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
             referencedRelation: "classes"
             referencedColumns: ["id"]
           },
@@ -383,13 +355,6 @@ export type Database = {
             foreignKeyName: "messages_class_id_fkey"
             columns: ["class_id"]
             isOneToOne: false
-            referencedRelation: "class_analytics"
-            referencedColumns: ["class_id"]
-          },
-          {
-            foreignKeyName: "messages_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
             referencedRelation: "classes"
             referencedColumns: ["id"]
           },
@@ -445,13 +410,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "document_categories"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "notice_board_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
-            referencedRelation: "class_analytics"
-            referencedColumns: ["class_id"]
           },
           {
             foreignKeyName: "notice_board_class_id_fkey"
@@ -560,13 +518,6 @@ export type Database = {
             foreignKeyName: "polls_class_id_fkey"
             columns: ["class_id"]
             isOneToOne: false
-            referencedRelation: "class_analytics"
-            referencedColumns: ["class_id"]
-          },
-          {
-            foreignKeyName: "polls_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
             referencedRelation: "classes"
             referencedColumns: ["id"]
           },
@@ -601,13 +552,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "presentations_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
-            referencedRelation: "class_analytics"
-            referencedColumns: ["class_id"]
-          },
           {
             foreignKeyName: "presentations_class_id_fkey"
             columns: ["class_id"]
@@ -704,13 +648,6 @@ export type Database = {
             foreignKeyName: "user_roles_class_id_fkey"
             columns: ["class_id"]
             isOneToOne: false
-            referencedRelation: "class_analytics"
-            referencedColumns: ["class_id"]
-          },
-          {
-            foreignKeyName: "user_roles_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
             referencedRelation: "classes"
             referencedColumns: ["id"]
           },
@@ -781,13 +718,6 @@ export type Database = {
             foreignKeyName: "video_call_sessions_class_id_fkey"
             columns: ["class_id"]
             isOneToOne: false
-            referencedRelation: "class_analytics"
-            referencedColumns: ["class_id"]
-          },
-          {
-            foreignKeyName: "video_call_sessions_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
             referencedRelation: "classes"
             referencedColumns: ["id"]
           },
@@ -795,19 +725,20 @@ export type Database = {
       }
     }
     Views: {
-      class_analytics: {
-        Row: {
-          class_id: string | null
-          class_name: string | null
-          created_at: string | null
-          last_message_at: string | null
-          member_count: number | null
-          message_count: number | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
+      get_class_analytics_for_member: {
+        Args: { _user_id: string }
+        Returns: {
+          class_id: string
+          class_name: string
+          created_at: string
+          last_message_at: string
+          member_count: number
+          message_count: number
+        }[]
+      }
       get_class_by_invite_code: {
         Args: { _invite_code: string }
         Returns: {
