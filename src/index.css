@@ -127,20 +127,34 @@ All colors MUST be HSL.
   
   /* Prevent horizontal scroll on mobile */
   .container {
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    max-width: 100vw;
   }
   
   /* Better touch targets */
   button, [role="button"] {
-    min-height: 36px;
-    min-width: 36px;
+    min-height: 32px;
   }
   
   /* Smooth animations */
   * {
     -webkit-tap-highlight-color: transparent;
   }
+  
+  /* Fix tabs overflow */
+  [role="tablist"] {
+    max-width: 100%;
+  }
+}
+
+/* Safe area for notch devices */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 /* Video call fullscreen fix */
@@ -152,4 +166,19 @@ All colors MUST be HSL.
   bottom: 0 !important;
   z-index: 9999 !important;
   overflow: hidden !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+}
+
+/* Horizontal scroll for tabs */
+.tabs-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.tabs-scroll::-webkit-scrollbar {
+  display: none;
 }
