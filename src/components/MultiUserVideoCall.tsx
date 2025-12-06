@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -18,11 +18,25 @@ interface Participant {
   avatar_url?: string | null;
 }
 
+interface PeerData {
+  connection: RTCPeerConnection;
+  stream: MediaStream | null;
+}
+
 // Detect if screen sharing is supported
 const isScreenShareSupported = () => {
   return typeof navigator !== 'undefined' && 
          navigator.mediaDevices && 
          typeof navigator.mediaDevices.getDisplayMedia === 'function';
+};
+
+// ICE servers configuration for WebRTC
+const iceServers = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+  ],
 };
 
 const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProps) => {
@@ -34,14 +48,17 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
   const [className, setClassName] = useState<string>("");
   const [callDuration, setCallDuration] = useState<string>("00:00");
   const [showParticipants, setShowParticipants] = useState(false);
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const canScreenShare = isScreenShareSupported();
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const localStream = useRef<MediaStream | null>(null);
   const screenStream = useRef<MediaStream | null>(null);
-  const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const peerConnections = useRef<Map<string, PeerData>>(new Map());
   const callStartTime = useRef<number>(Date.now());
   const durationInterval = useRef<NodeJS.Timeout | null>(null);
+  const channelRef = useRef<any>(null);
+  const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
 
   useEffect(() => {
     initializeCall();
@@ -66,8 +83,178 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
   useEffect(() => {
     if (sessionId) {
       subscribeToParticipants();
+      setupSignaling();
     }
   }, [sessionId]);
+
+  // Set up WebRTC signaling via Supabase Realtime
+  const setupSignaling = () => {
+    const channel = supabase.channel(`webrtc-${classId}-${sessionId}`, {
+      config: { broadcast: { self: false } }
+    });
+    
+    channel
+      .on("broadcast", { event: "offer" }, async ({ payload }) => {
+        if (payload.to === userId) {
+          await handleOffer(payload);
+        }
+      })
+      .on("broadcast", { event: "answer" }, async ({ payload }) => {
+        if (payload.to === userId) {
+          await handleAnswer(payload);
+        }
+      })
+      .on("broadcast", { event: "ice-candidate" }, async ({ payload }) => {
+        if (payload.to === userId) {
+          await handleIceCandidate(payload);
+        }
+      })
+      .on("broadcast", { event: "user-joined" }, async ({ payload }) => {
+        if (payload.userId !== userId && localStream.current) {
+          // Create offer for the new participant
+          await createOffer(payload.userId);
+        }
+      })
+      .subscribe();
+
+    channelRef.current = channel;
+  };
+
+  const createPeerConnection = (peerId: string): RTCPeerConnection => {
+    // Close existing connection if any
+    const existing = peerConnections.current.get(peerId);
+    if (existing) {
+      existing.connection.close();
+    }
+
+    const pc = new RTCPeerConnection(iceServers);
+    
+    // Add local tracks
+    if (localStream.current) {
+      localStream.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStream.current!);
+      });
+    }
+
+    // Handle remote stream
+    pc.ontrack = (event) => {
+      console.log("Received remote track from:", peerId);
+      const [stream] = event.streams;
+      if (stream) {
+        setRemoteStreams(prev => {
+          const updated = new Map(prev);
+          updated.set(peerId, stream);
+          return updated;
+        });
+        
+        // Set video srcObject if ref exists
+        const videoEl = remoteVideoRefs.current.get(peerId);
+        if (videoEl) {
+          videoEl.srcObject = stream;
+        }
+      }
+    };
+
+    // Handle ICE candidates
+    pc.onicecandidate = (event) => {
+      if (event.candidate && channelRef.current) {
+        channelRef.current.send({
+          type: "broadcast",
+          event: "ice-candidate",
+          payload: {
+            candidate: event.candidate.toJSON(),
+            to: peerId,
+            from: userId
+          }
+        });
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log(`Connection state with ${peerId}:`, pc.connectionState);
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        // Clean up failed connection
+        setRemoteStreams(prev => {
+          const updated = new Map(prev);
+          updated.delete(peerId);
+          return updated;
+        });
+      }
+    };
+
+    peerConnections.current.set(peerId, { connection: pc, stream: null });
+    return pc;
+  };
+
+  const createOffer = async (peerId: string) => {
+    try {
+      const pc = createPeerConnection(peerId);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: "broadcast",
+          event: "offer",
+          payload: {
+            offer: pc.localDescription?.toJSON(),
+            to: peerId,
+            from: userId
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error creating offer:", error);
+    }
+  };
+
+  const handleOffer = async (payload: { offer: RTCSessionDescriptionInit; from: string }) => {
+    try {
+      console.log("Received offer from:", payload.from);
+      const pc = createPeerConnection(payload.from);
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
+      
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: "broadcast",
+          event: "answer",
+          payload: {
+            answer: pc.localDescription?.toJSON(),
+            to: payload.from,
+            from: userId
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error handling offer:", error);
+    }
+  };
+
+  const handleAnswer = async (payload: { answer: RTCSessionDescriptionInit; from: string }) => {
+    try {
+      console.log("Received answer from:", payload.from);
+      const peerData = peerConnections.current.get(payload.from);
+      if (peerData) {
+        await peerData.connection.setRemoteDescription(new RTCSessionDescription(payload.answer));
+      }
+    } catch (error) {
+      console.error("Error handling answer:", error);
+    }
+  };
+
+  const handleIceCandidate = async (payload: { candidate: RTCIceCandidateInit; from: string }) => {
+    try {
+      const peerData = peerConnections.current.get(payload.from);
+      if (peerData && payload.candidate) {
+        await peerData.connection.addIceCandidate(new RTCIceCandidate(payload.candidate));
+      }
+    } catch (error) {
+      console.error("Error handling ICE candidate:", error);
+    }
+  };
 
   const initializeCall = async () => {
     try {
@@ -140,7 +327,7 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
           title: "📹 Video Call Started",
           message: `${userProfile?.full_name || "Someone"} started a video call in ${className || "your class"}`,
           type: "video_call",
-          link: `/classroom/${classId}?joinCall=${sessionId}`,
+          link: `/class/${classId}?joinCall=${sessionId}`,
           read: false,
         }));
 
@@ -206,8 +393,22 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
           table: "video_call_participants",
           filter: `session_id=eq.${sessionId}`,
         },
-        async () => {
+        async (payload) => {
           await fetchParticipants();
+          
+          // When a new participant joins, create offers
+          if (payload.eventType === 'INSERT' && payload.new.user_id !== userId && localStream.current) {
+            // Broadcast that we joined so others can send offers
+            if (channelRef.current) {
+              channelRef.current.send({
+                type: "broadcast",
+                event: "user-joined",
+                payload: { userId }
+              });
+            }
+            // Also create offer to the new participant
+            setTimeout(() => createOffer(payload.new.user_id), 500);
+          }
         }
       )
       .subscribe();
@@ -245,6 +446,14 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
       })) || [];
 
       setParticipants(participantsWithNames);
+      
+      // Create offers for existing participants we don't have connections with
+      const otherParticipants = participantsWithNames.filter(p => p.user_id !== userId);
+      for (const participant of otherParticipants) {
+        if (!peerConnections.current.has(participant.user_id) && localStream.current) {
+          await createOffer(participant.user_id);
+        }
+      }
     } catch (error: any) {
       console.error("Error fetching participants:", error);
     }
@@ -284,9 +493,19 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
           screenStream.current = null;
         }
         
-        // Resume camera
-        if (localStream.current && localVideoRef.current) {
-          localVideoRef.current.srcObject = localStream.current;
+        // Resume camera and replace track in peer connections
+        if (localStream.current) {
+          const videoTrack = localStream.current.getVideoTracks()[0];
+          peerConnections.current.forEach(({ connection }) => {
+            const sender = connection.getSenders().find(s => s.track?.kind === 'video');
+            if (sender && videoTrack) {
+              sender.replaceTrack(videoTrack);
+            }
+          });
+          
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = localStream.current;
+          }
         }
         
         setIsScreenSharing(false);
@@ -298,15 +517,34 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
         });
         
         screenStream.current = stream;
+        const screenTrack = stream.getVideoTracks()[0];
+        
+        // Replace video track in all peer connections
+        peerConnections.current.forEach(({ connection }) => {
+          const sender = connection.getSenders().find(s => s.track?.kind === 'video');
+          if (sender) {
+            sender.replaceTrack(screenTrack);
+          }
+        });
+        
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
         
         // Handle when user stops sharing via browser UI
-        stream.getVideoTracks()[0].onended = () => {
+        screenTrack.onended = () => {
           setIsScreenSharing(false);
-          if (localStream.current && localVideoRef.current) {
-            localVideoRef.current.srcObject = localStream.current;
+          if (localStream.current) {
+            const videoTrack = localStream.current.getVideoTracks()[0];
+            peerConnections.current.forEach(({ connection }) => {
+              const sender = connection.getSenders().find(s => s.track?.kind === 'video');
+              if (sender && videoTrack) {
+                sender.replaceTrack(videoTrack);
+              }
+            });
+            if (localVideoRef.current) {
+              localVideoRef.current.srcObject = localStream.current;
+            }
           }
         };
         
@@ -369,15 +607,36 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
     }
 
     // Close all peer connections
-    peerConnections.current.forEach(pc => pc.close());
+    peerConnections.current.forEach(({ connection }) => connection.close());
     peerConnections.current.clear();
+
+    // Unsubscribe from signaling channel
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    setRemoteStreams(new Map());
   };
+
+  // Set ref for remote video element
+  const setRemoteVideoRef = useCallback((userId: string, el: HTMLVideoElement | null) => {
+    if (el) {
+      remoteVideoRefs.current.set(userId, el);
+      const stream = remoteStreams.get(userId);
+      if (stream) {
+        el.srcObject = stream;
+      }
+    } else {
+      remoteVideoRefs.current.delete(userId);
+    }
+  }, [remoteStreams]);
 
   // Calculate grid layout based on participant count
   const getGridClass = () => {
     const count = participants.length;
     if (count <= 1) return "grid-cols-1";
-    if (count === 2) return "grid-cols-2";
+    if (count === 2) return "grid-cols-1 sm:grid-cols-2";
     if (count <= 4) return "grid-cols-2";
     if (count <= 6) return "grid-cols-2 sm:grid-cols-3";
     return "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
@@ -390,32 +649,33 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
   return (
     <div className="video-call-container fixed inset-0 z-50 bg-[hsl(220,25%,8%)] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-[hsl(220,25%,12%)] px-3 py-2 flex items-center justify-between shrink-0">
+      <div className="bg-[hsl(220,25%,12%)] px-3 py-2 flex items-center justify-between shrink-0 safe-area-top">
         <button 
-          onClick={() => setShowParticipants(false)}
-          className="p-2 text-muted-foreground hover:text-foreground"
+          onClick={endCall}
+          className="p-2 text-muted-foreground hover:text-foreground rounded-full"
         >
           <X className="w-5 h-5" />
         </button>
         
-        <div className="text-center">
-          <h2 className="text-sm sm:text-base font-medium text-foreground">{className || "Video Call"}</h2>
+        <div className="text-center flex-1">
+          <h2 className="text-sm font-medium text-foreground truncate">{className || "Video Call"}</h2>
           <span className="text-xs text-muted-foreground">{callDuration}</span>
         </div>
         
         <button 
           onClick={() => setShowParticipants(!showParticipants)}
-          className="p-2 text-muted-foreground hover:text-foreground"
+          className="p-2 text-muted-foreground hover:text-foreground rounded-full flex items-center gap-1"
         >
           <Users className="w-5 h-5" />
+          <span className="text-xs">{participants.length}</span>
         </button>
       </div>
 
       {/* Video Grid - WhatsApp style */}
-      <div className="flex-1 overflow-hidden p-2 sm:p-4">
-        <div className={`grid ${getGridClass()} gap-2 sm:gap-3 h-full auto-rows-fr`}>
+      <div className="flex-1 overflow-hidden p-2">
+        <div className={`grid ${getGridClass()} gap-2 h-full auto-rows-fr`}>
           {/* Current user's video */}
-          <div className="relative rounded-xl overflow-hidden bg-[hsl(220,25%,15%)] border-2 border-primary/60">
+          <div className="relative rounded-xl overflow-hidden bg-[hsl(220,25%,15%)] border-2 border-primary/60 min-h-[120px]">
             <video
               ref={localVideoRef}
               autoPlay
@@ -425,20 +685,20 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
             />
             {isVideoOff && (
               <div className="absolute inset-0 flex items-center justify-center">
-                <Avatar className="w-16 h-16 sm:w-20 sm:h-20">
+                <Avatar className="w-14 h-14 sm:w-20 sm:h-20">
                   <AvatarImage src={currentUser?.avatar_url || ""} />
-                  <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-xl sm:text-2xl">
                     {currentUser?.full_name?.charAt(0).toUpperCase() || "Y"}
                   </AvatarFallback>
                 </Avatar>
               </div>
             )}
             <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-              <span className="text-xs sm:text-sm font-medium text-primary bg-black/50 px-2 py-0.5 rounded-full">
+              <span className="text-xs font-medium text-primary bg-black/60 px-2 py-0.5 rounded-full">
                 You
               </span>
               {isMuted && (
-                <span className="text-xs bg-destructive/80 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                <span className="text-xs bg-destructive/80 text-white px-1.5 py-0.5 rounded-full flex items-center">
                   <MicOff className="w-3 h-3" />
                 </span>
               )}
@@ -451,35 +711,49 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
           </div>
 
           {/* Other participants */}
-          {otherParticipants.map((participant) => (
-            <div 
-              key={participant.user_id}
-              className="relative rounded-xl overflow-hidden bg-[hsl(220,25%,15%)] border-2 border-accent/40"
-            >
-              {/* Placeholder for remote video - show avatar for now */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Avatar className="w-16 h-16 sm:w-20 sm:h-20">
-                  <AvatarImage src={participant.avatar_url || ""} />
-                  <AvatarFallback className="bg-accent text-accent-foreground text-2xl">
-                    {participant.full_name?.charAt(0).toUpperCase() || "?"}
-                  </AvatarFallback>
-                </Avatar>
+          {otherParticipants.map((participant) => {
+            const hasStream = remoteStreams.has(participant.user_id);
+            return (
+              <div 
+                key={participant.user_id}
+                className="relative rounded-xl overflow-hidden bg-[hsl(220,25%,15%)] border-2 border-accent/40 min-h-[120px]"
+              >
+                {hasStream ? (
+                  <video
+                    ref={(el) => setRemoteVideoRef(participant.user_id, el)}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center">
+                      <Avatar className="w-14 h-14 sm:w-20 sm:h-20 mx-auto">
+                        <AvatarImage src={participant.avatar_url || ""} />
+                        <AvatarFallback className="bg-accent text-accent-foreground text-xl sm:text-2xl">
+                          {participant.full_name?.charAt(0).toUpperCase() || "?"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <p className="text-xs text-muted-foreground mt-2">Connecting...</p>
+                    </div>
+                  </div>
+                )}
+                <div className="absolute bottom-2 left-2 right-2">
+                  <span className="text-xs font-medium text-accent bg-black/60 px-2 py-0.5 rounded-full">
+                    {participant.full_name || "Participant"}
+                  </span>
+                </div>
               </div>
-              <div className="absolute bottom-2 left-2 right-2">
-                <span className="text-xs sm:text-sm font-medium text-accent bg-black/50 px-2 py-0.5 rounded-full">
-                  {participant.full_name || "Participant"}
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       {/* Participants panel (slide up on mobile) */}
       {showParticipants && (
-        <div className="absolute bottom-20 left-0 right-0 bg-[hsl(220,25%,12%)] rounded-t-2xl p-4 max-h-[50vh] overflow-y-auto animate-in slide-in-from-bottom">
+        <div className="absolute bottom-20 left-0 right-0 bg-[hsl(220,25%,12%)] rounded-t-2xl p-4 max-h-[40vh] overflow-y-auto animate-in slide-in-from-bottom z-10">
           <div className="text-center mb-3">
-            <span className="text-sm text-muted-foreground">{participants.length} connected</span>
+            <span className="text-sm text-muted-foreground">{participants.length} in call</span>
           </div>
           <div className="space-y-2">
             {participants.map((participant) => (
@@ -487,16 +761,19 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
                 key={participant.user_id}
                 className="flex items-center gap-3 p-2 rounded-lg bg-[hsl(220,25%,18%)]"
               >
-                <Avatar className="w-10 h-10">
+                <Avatar className="w-9 h-9">
                   <AvatarImage src={participant.avatar_url || ""} />
-                  <AvatarFallback className="bg-primary text-primary-foreground">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-sm">
                     {participant.full_name?.charAt(0).toUpperCase() || "?"}
                   </AvatarFallback>
                 </Avatar>
-                <span className="text-sm font-medium text-foreground">
+                <span className="text-sm font-medium text-foreground flex-1 truncate">
                   {participant.full_name || "Participant"}
                   {participant.user_id === userId && " (You)"}
                 </span>
+                {remoteStreams.has(participant.user_id) && participant.user_id !== userId && (
+                  <span className="text-xs text-green-400">Connected</span>
+                )}
               </div>
             ))}
           </div>
@@ -504,51 +781,51 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
       )}
 
       {/* Bottom control bar - WhatsApp style */}
-      <div className="bg-[hsl(220,25%,12%)] px-4 py-3 sm:py-4 flex items-center justify-center gap-4 sm:gap-6 shrink-0">
+      <div className="bg-[hsl(220,25%,12%)] px-4 py-3 flex items-center justify-center gap-3 sm:gap-5 shrink-0 safe-area-bottom">
         <button
           onClick={toggleMute}
-          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
+          className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
             isMuted 
               ? 'bg-destructive/20 text-destructive' 
               : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
           }`}
           title={isMuted ? "Unmute" : "Mute"}
         >
-          {isMuted ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6" />}
+          {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
         </button>
 
         <button
           onClick={toggleVideo}
-          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
+          className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
             isVideoOff 
               ? 'bg-destructive/20 text-destructive' 
               : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
           }`}
           title={isVideoOff ? "Turn on camera" : "Turn off camera"}
         >
-          {isVideoOff ? <VideoOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Video className="w-5 h-5 sm:w-6 sm:h-6" />}
+          {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
         </button>
 
         {canScreenShare && (
           <button
             onClick={toggleScreenShare}
-            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
+            className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
               isScreenSharing 
                 ? 'bg-primary text-primary-foreground' 
                 : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
             }`}
             title={isScreenSharing ? "Stop sharing" : "Share screen"}
           >
-            {isScreenSharing ? <MonitorOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Monitor className="w-5 h-5 sm:w-6 sm:h-6" />}
+            {isScreenSharing ? <MonitorOff className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
           </button>
         )}
 
         <button
           onClick={endCall}
-          className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:bg-destructive/90 transition-all"
+          className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:bg-destructive/90 transition-all"
           title="End call"
         >
-          <PhoneOff className="w-6 h-6 sm:w-7 sm:h-7" />
+          <PhoneOff className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
       </div>
     </div>
