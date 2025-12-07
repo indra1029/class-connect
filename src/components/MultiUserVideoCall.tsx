@@ -2,7 +2,8 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Video, VideoOff, Mic, MicOff, PhoneOff, Monitor, Users, MonitorOff, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Video, VideoOff, Mic, MicOff, PhoneOff, Monitor, Users, MonitorOff, X, MessageCircle, Send } from "lucide-react";
 import { toast } from "sonner";
 
 interface MultiUserVideoCallProps {
@@ -21,6 +22,14 @@ interface Participant {
 interface PeerData {
   connection: RTCPeerConnection;
   stream: MediaStream | null;
+}
+
+interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  timestamp: Date;
 }
 
 // Detect if screen sharing is supported
@@ -50,6 +59,13 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
   const [showParticipants, setShowParticipants] = useState(false);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const canScreenShare = isScreenShareSupported();
+  
+  // Chat state
+  const [showChat, setShowChat] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [unreadCount, setUnreadCount] = useState(0);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const localStream = useRef<MediaStream | null>(null);
@@ -87,6 +103,20 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
     }
   }, [sessionId]);
 
+  // Auto-scroll chat to bottom when new messages arrive
+  useEffect(() => {
+    if (chatEndRef.current && showChat) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, showChat]);
+
+  // Reset unread count when chat is opened
+  useEffect(() => {
+    if (showChat) {
+      setUnreadCount(0);
+    }
+  }, [showChat]);
+
   // Set up WebRTC signaling via Supabase Realtime
   const setupSignaling = () => {
     const channel = supabase.channel(`webrtc-${classId}-${sessionId}`, {
@@ -115,9 +145,69 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
           await createOffer(payload.userId);
         }
       })
+      .on("broadcast", { event: "chat-message" }, ({ payload }) => {
+        // Add incoming message
+        const msg: ChatMessage = {
+          id: payload.id,
+          senderId: payload.senderId,
+          senderName: payload.senderName,
+          text: payload.text,
+          timestamp: new Date(payload.timestamp)
+        };
+        setMessages(prev => [...prev, msg]);
+        
+        // Increment unread count if chat is closed
+        if (!showChat) {
+          setUnreadCount(prev => prev + 1);
+        }
+      })
       .subscribe();
 
     channelRef.current = channel;
+  };
+
+  // Send chat message
+  const sendChatMessage = () => {
+    if (!newMessage.trim() || !channelRef.current) return;
+    
+    const currentUser = participants.find(p => p.user_id === userId);
+    
+    const message: ChatMessage = {
+      id: crypto.randomUUID(),
+      senderId: userId,
+      senderName: currentUser?.full_name || "You",
+      text: newMessage.trim(),
+      timestamp: new Date()
+    };
+    
+    // Add to local messages immediately
+    setMessages(prev => [...prev, message]);
+    
+    // Broadcast to others
+    channelRef.current.send({
+      type: "broadcast",
+      event: "chat-message",
+      payload: {
+        id: message.id,
+        senderId: message.senderId,
+        senderName: message.senderName,
+        text: message.text,
+        timestamp: message.timestamp.toISOString()
+      }
+    });
+    
+    setNewMessage("");
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  };
+
+  const formatMessageTime = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const createPeerConnection = (peerId: string): RTCPeerConnection => {
@@ -780,6 +870,73 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
         </div>
       )}
 
+      {/* Chat panel (slide up on mobile) */}
+      {showChat && (
+        <div className="absolute bottom-20 left-0 right-0 bg-[hsl(220,25%,12%)] rounded-t-2xl max-h-[50vh] flex flex-col animate-in slide-in-from-bottom z-10">
+          {/* Chat header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border/20">
+            <span className="text-sm font-medium text-foreground">In-call Chat</span>
+            <button 
+              onClick={() => setShowChat(false)}
+              className="p-1 text-muted-foreground hover:text-foreground rounded"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          
+          {/* Messages list */}
+          <div className="flex-1 overflow-y-auto px-4 py-2 space-y-3 min-h-[150px] max-h-[250px]">
+            {messages.length === 0 ? (
+              <div className="text-center text-muted-foreground text-sm py-4">
+                No messages yet. Say hi!
+              </div>
+            ) : (
+              messages.map((msg) => (
+                <div 
+                  key={msg.id} 
+                  className={`flex flex-col ${msg.senderId === userId ? 'items-end' : 'items-start'}`}
+                >
+                  {msg.senderId !== userId && (
+                    <span className="text-xs text-muted-foreground mb-1">{msg.senderName}</span>
+                  )}
+                  <div 
+                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm ${
+                      msg.senderId === userId 
+                        ? 'bg-primary text-primary-foreground rounded-br-md' 
+                        : 'bg-[hsl(220,25%,20%)] text-foreground rounded-bl-md'
+                    }`}
+                  >
+                    {msg.text}
+                  </div>
+                  <span className="text-xs text-muted-foreground mt-1">
+                    {formatMessageTime(msg.timestamp)}
+                  </span>
+                </div>
+              ))
+            )}
+            <div ref={chatEndRef} />
+          </div>
+          
+          {/* Message input */}
+          <div className="p-3 border-t border-border/20 flex items-center gap-2">
+            <Input
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Type a message..."
+              className="flex-1 bg-[hsl(220,25%,18%)] border-0 text-foreground placeholder:text-muted-foreground text-sm"
+            />
+            <button
+              onClick={sendChatMessage}
+              disabled={!newMessage.trim()}
+              className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bottom control bar - WhatsApp style */}
       <div className="bg-[hsl(220,25%,12%)] px-4 py-3 flex items-center justify-center gap-3 sm:gap-5 shrink-0 safe-area-bottom">
         <button
@@ -804,6 +961,27 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
           title={isVideoOff ? "Turn on camera" : "Turn off camera"}
         >
           {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+        </button>
+
+        {/* Chat button with unread badge */}
+        <button
+          onClick={() => {
+            setShowChat(!showChat);
+            setShowParticipants(false);
+          }}
+          className={`relative w-11 h-11 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
+            showChat 
+              ? 'bg-primary text-primary-foreground' 
+              : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
+          }`}
+          title="Chat"
+        >
+          <MessageCircle className="w-5 h-5" />
+          {unreadCount > 0 && !showChat && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground text-xs rounded-full flex items-center justify-center font-medium">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
         </button>
 
         {canScreenShare && (
