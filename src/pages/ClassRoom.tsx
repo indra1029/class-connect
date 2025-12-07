@@ -386,93 +386,88 @@ const ClassRoom = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col overflow-x-hidden w-full max-w-full">
       <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-10 shadow-sm safe-area-top">
-        <div className="container mx-auto px-2 sm:px-4 py-2">
-          <div className="flex items-center justify-between gap-1.5">
-            {/* Left: Back button and class info */}
-            <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
-              <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")} className="shrink-0 h-8 w-8 p-0 sm:w-auto sm:px-3">
-                <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline ml-1">Back</span>
-              </Button>
-              <div className="min-w-0 flex-1">
-                <h1 className="text-sm sm:text-lg font-bold text-foreground truncate">{classData?.name}</h1>
-                {classData?.description && (
-                  <p className="text-xs text-muted-foreground truncate hidden sm:block">{classData.description}</p>
-                )}
-              </div>
+        <div className="w-full px-2 sm:px-4 py-2 max-w-full overflow-hidden">
+          <div className="flex items-center gap-2">
+            {/* Back button */}
+            <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")} className="shrink-0 h-8 w-8 p-0">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            
+            {/* Class name - truncated */}
+            <div className="min-w-0 flex-1">
+              <h1 className="text-sm sm:text-base font-semibold text-foreground truncate">{classData?.name}</h1>
             </div>
             
-            {/* Right: Action buttons - horizontal scroll on mobile */}
+            {/* Action buttons - fixed width */}
             <div className="flex items-center gap-1 shrink-0">
               <Button 
                 variant={showVideoCall ? "default" : "outline"} 
                 size="sm" 
                 onClick={() => setShowVideoCall(true)} 
-                className="h-8 px-2 text-xs"
+                className="h-8 w-8 p-0"
+                title="Video Call"
               >
                 <Video className="w-4 h-4" />
-                <span className="ml-1">Call</span>
               </Button>
               <Button 
                 variant={showMembers ? "default" : "outline"} 
                 size="sm" 
                 onClick={() => setShowMembers(!showMembers)} 
-                className="h-8 px-2 text-xs"
+                className="h-8 w-8 p-0"
+                title="Members"
               >
                 <Users className="w-4 h-4" />
-                <span className="ml-1 hidden sm:inline">Members</span>
               </Button>
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={copyInviteCode} 
-                className="h-8 px-2 text-xs font-mono"
-                title={classData?.invite_code}
+                className="h-8 w-8 p-0"
+                title={`Copy: ${classData?.invite_code}`}
               >
                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                <span className="ml-1 hidden md:inline">{classData?.invite_code}</span>
               </Button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-2 sm:px-4 py-2 sm:py-6 flex flex-col sm:flex-row gap-2 sm:gap-6 overflow-hidden">
+      <main className="flex-1 w-full px-2 sm:px-4 py-2 sm:py-4 flex flex-col sm:flex-row gap-2 sm:gap-4 overflow-x-hidden max-w-full">
         {showMembers && (
-          <div className="w-full sm:w-72 md:w-80 shrink-0 order-first sm:order-none max-h-[40vh] sm:max-h-none overflow-auto">
+          <div className="w-full sm:w-72 shrink-0 order-first sm:order-none max-h-[35vh] sm:max-h-none overflow-auto">
             <ClassMembers classId={classId!} user={user!} isAdmin={isAdmin} />
           </div>
         )}
         
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          <Tabs defaultValue="chat" className="flex-1 flex flex-col min-h-0">
-            {/* Scrollable tabs container */}
-            <div className="overflow-x-auto mb-2 sm:mb-4 pb-1 scrollbar-hide shrink-0 -mx-2 px-2">
-              <TabsList className="inline-flex w-max gap-1 bg-muted/50 p-1 rounded-lg">
-                <TabsTrigger value="chat" className="flex items-center gap-1 px-3 py-2 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
-                  <MessageSquare className="w-4 h-4" />
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 max-w-full overflow-hidden">
+          <Tabs defaultValue="chat" className="flex-1 flex flex-col min-h-0 w-full max-w-full">
+            {/* Scrollable tabs container - fixed width */}
+            <div className="w-full overflow-x-auto mb-2 shrink-0 scrollbar-hide">
+              <TabsList className="inline-flex w-max min-w-full gap-0.5 bg-muted/50 p-1 rounded-lg">
+                <TabsTrigger value="chat" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                  <MessageSquare className="w-3.5 h-3.5" />
                   <span>Chat</span>
                 </TabsTrigger>
-                <TabsTrigger value="announcements" className="flex items-center gap-1 px-3 py-2 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
-                  <Megaphone className="w-4 h-4" />
-                  <span>Announce</span>
+                <TabsTrigger value="announcements" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                  <Megaphone className="w-3.5 h-3.5" />
+                  <span>News</span>
                 </TabsTrigger>
-                <TabsTrigger value="presentations" className="flex items-center gap-1 px-3 py-2 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
-                  <Presentation className="w-4 h-4" />
-                  <span>Present</span>
+                <TabsTrigger value="presentations" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                  <Presentation className="w-3.5 h-3.5" />
+                  <span>PPT</span>
                 </TabsTrigger>
-                <TabsTrigger value="polls" className="flex items-center gap-1 px-3 py-2 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
-                  <BarChart3 className="w-4 h-4" />
+                <TabsTrigger value="polls" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                  <BarChart3 className="w-3.5 h-3.5" />
                   <span>Polls</span>
                 </TabsTrigger>
-                <TabsTrigger value="calendar" className="flex items-center gap-1 px-3 py-2 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
-                  <CalendarIcon className="w-4 h-4" />
-                  <span>Calendar</span>
+                <TabsTrigger value="calendar" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                  <CalendarIcon className="w-3.5 h-3.5" />
+                  <span>Cal</span>
                 </TabsTrigger>
-                <TabsTrigger value="documents" className="flex items-center gap-1 px-3 py-2 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
-                  <Paperclip className="w-4 h-4" />
+                <TabsTrigger value="documents" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                  <Paperclip className="w-3.5 h-3.5" />
                   <span>Docs</span>
                 </TabsTrigger>
               </TabsList>
