@@ -315,17 +315,14 @@ const CRGroupChat = () => {
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("class-files")
-        .getPublicUrl(fileName);
-
+      // Store the file path (not public URL) for later signed URL generation
       const { error: insertError } = await supabase
         .from("admin_messages")
         .insert({
           from_user_id: user!.id,
           to_user_id: user!.id, // Group messages
           content: `Shared a file: ${file.name}`,
-          file_url: publicUrl,
+          file_url: fileName, // Store path, not URL
         });
 
       if (insertError) throw insertError;

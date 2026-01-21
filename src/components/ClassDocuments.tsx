@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getSignedFileUrl } from "@/lib/storage";
 
 interface ClassDocument {
   id: string;
@@ -163,7 +164,10 @@ export const ClassDocuments = ({ classId, isAdmin = false }: ClassDocumentsProps
 
   const handleDownload = async (fileUrl: string, fileName: string) => {
     try {
-      const response = await fetch(fileUrl);
+      // Get signed URL for secure access to private bucket files
+      const signedUrl = await getSignedFileUrl(fileUrl);
+      
+      const response = await fetch(signedUrl);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -263,17 +267,14 @@ export const ClassDocuments = ({ classId, isAdmin = false }: ClassDocumentsProps
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('class-files')
-        .getPublicUrl(filePath);
-
+      // Store the file path (not public URL) for later signed URL generation
       const { error: insertError } = await supabase
         .from("messages")
         .insert({
           class_id: classId,
           user_id: user.id,
           content: `Uploaded ${uploadFile.name}`,
-          file_url: publicUrl,
+          file_url: filePath, // Store path, not URL
           file_name: uploadFile.name,
           file_type: uploadFile.type,
           category_id: uploadCategory,
