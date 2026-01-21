@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell } from "lucide-react";
+import { Bell, Phone, PhoneOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -23,6 +23,7 @@ interface Notification {
 const NotificationBell = ({ userId }: { userId: string }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [activeCallSessions, setActiveCallSessions] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -68,6 +69,35 @@ const NotificationBell = ({ userId }: { userId: string }) => {
     };
   }, [userId]);
 
+  // Check which video call sessions are still active
+  useEffect(() => {
+    const checkActiveSessions = async () => {
+      const videoNotifs = notifications.filter(n => n.type === "video_call" && n.link);
+      const sessionIds = videoNotifs.map(n => {
+        const url = new URL(n.link!, window.location.origin);
+        return url.searchParams.get("joinCall");
+      }).filter(Boolean) as string[];
+
+      if (sessionIds.length === 0) {
+        setActiveCallSessions(new Set());
+        return;
+      }
+
+      const { data } = await supabase
+        .from("video_call_sessions")
+        .select("id")
+        .in("id", sessionIds)
+        .eq("is_active", true);
+
+      setActiveCallSessions(new Set(data?.map(s => s.id) || []));
+    };
+
+    checkActiveSessions();
+    // Re-check every 30 seconds
+    const interval = setInterval(checkActiveSessions, 30000);
+    return () => clearInterval(interval);
+  }, [notifications]);
+
   const fetchNotifications = async () => {
     const { data, error } = await supabase
       .from("notifications")
@@ -98,12 +128,38 @@ const NotificationBell = ({ userId }: { userId: string }) => {
     markAsRead(notif.id);
     if (notif.link) {
       // Security: Only allow internal navigation (relative paths)
-      // This prevents open redirect attacks if notification links are ever user-controlled
       if (notif.link.startsWith('/') || notif.link.startsWith('#')) {
         navigate(notif.link);
       } else {
         console.warn('External notification link blocked:', notif.link);
       }
+    }
+  };
+
+  const handleJoinCall = (notif: Notification, e: React.MouseEvent) => {
+    e.stopPropagation();
+    markAsRead(notif.id);
+    if (notif.link && (notif.link.startsWith('/') || notif.link.startsWith('#'))) {
+      navigate(notif.link);
+    }
+  };
+
+  const handleDeclineCall = (notif: Notification, e: React.MouseEvent) => {
+    e.stopPropagation();
+    markAsRead(notif.id);
+    toast({
+      title: "Call declined",
+      description: "You can still join from the class page while the call is active.",
+    });
+  };
+
+  const getSessionIdFromLink = (link: string | null): string | null => {
+    if (!link) return null;
+    try {
+      const url = new URL(link, window.location.origin);
+      return url.searchParams.get("joinCall");
+    } catch {
+      return null;
     }
   };
 
@@ -129,21 +185,59 @@ const NotificationBell = ({ userId }: { userId: string }) => {
               No notifications yet
             </div>
           ) : (
-            notifications.map((notif) => (
-              <div
-                key={notif.id}
-                onClick={() => handleNotificationClick(notif)}
-                className={`p-4 border-b cursor-pointer hover:bg-secondary transition-colors ${
-                  !notif.read ? "bg-primary/5" : ""
-                }`}
-              >
-                <div className="font-medium">{notif.title}</div>
-                <div className="text-sm text-muted-foreground">{notif.message}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {new Date(notif.created_at).toLocaleString()}
+            notifications.map((notif) => {
+              const sessionId = getSessionIdFromLink(notif.link);
+              const isVideoCall = notif.type === "video_call";
+              const isCallActive = sessionId ? activeCallSessions.has(sessionId) : false;
+
+              return (
+                <div
+                  key={notif.id}
+                  onClick={() => handleNotificationClick(notif)}
+                  className={`p-4 border-b cursor-pointer hover:bg-secondary transition-colors ${
+                    !notif.read ? "bg-primary/5" : ""
+                  }`}
+                >
+                  <div className="font-medium">{notif.title}</div>
+                  <div className="text-sm text-muted-foreground">{notif.message}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {new Date(notif.created_at).toLocaleString()}
+                  </div>
+
+                  {/* Video call action buttons */}
+                  {isVideoCall && sessionId && (
+                    <div className="flex gap-2 mt-2">
+                      {isCallActive ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="flex-1 gap-1"
+                            onClick={(e) => handleJoinCall(notif, e)}
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            Join
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 gap-1 text-destructive border-destructive hover:bg-destructive/10"
+                            onClick={(e) => handleDeclineCall(notif, e)}
+                          >
+                            <PhoneOff className="w-3.5 h-3.5" />
+                            Decline
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">
+                          Call has ended
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </PopoverContent>
