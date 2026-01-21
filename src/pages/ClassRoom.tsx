@@ -55,6 +55,7 @@ const ClassRoom = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   const [showVideoCall, setShowVideoCall] = useState(false);
+  const [joinCallSessionId, setJoinCallSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -80,6 +81,7 @@ const ClassRoom = () => {
         .single()
         .then(({ data }) => {
           if (data?.is_active) {
+            setJoinCallSessionId(joinCallId);
             setShowVideoCall(true);
             toast({
               title: "Joining call...",
@@ -93,8 +95,9 @@ const ClassRoom = () => {
             });
           }
           // Clear the joinCall param
-          searchParams.delete('joinCall');
-          setSearchParams(searchParams);
+          const next = new URLSearchParams(searchParams);
+          next.delete('joinCall');
+          setSearchParams(next, { replace: true });
         });
     }
   }, [searchParams, user, classId]);
@@ -443,30 +446,30 @@ const ClassRoom = () => {
         
         <div className="flex-1 flex flex-col min-w-0 min-h-0 max-w-full overflow-hidden">
           <Tabs defaultValue="chat" className="flex-1 flex flex-col min-h-0 w-full max-w-full">
-            {/* Scrollable tabs container - fixed width */}
-            <div className="w-full overflow-x-auto mb-2 shrink-0 scrollbar-hide">
-              <TabsList className="inline-flex w-max min-w-full gap-0.5 bg-muted/50 p-1 rounded-lg">
-                <TabsTrigger value="chat" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+            {/* Mobile-friendly tabs: wrap into rows (no horizontal page scroll) */}
+            <div className="w-full mb-2 shrink-0">
+              <TabsList className="flex w-full flex-wrap gap-1 bg-muted/50 p-1 rounded-lg">
+                <TabsTrigger value="chat" className="flex basis-[calc(33.333%-0.25rem)] flex-1 items-center justify-center gap-1 px-2 py-2 text-xs rounded-md data-[state=active]:bg-background">
                   <MessageSquare className="w-3.5 h-3.5" />
                   <span>Chat</span>
                 </TabsTrigger>
-                <TabsTrigger value="announcements" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                <TabsTrigger value="announcements" className="flex basis-[calc(33.333%-0.25rem)] flex-1 items-center justify-center gap-1 px-2 py-2 text-xs rounded-md data-[state=active]:bg-background">
                   <Megaphone className="w-3.5 h-3.5" />
                   <span>News</span>
                 </TabsTrigger>
-                <TabsTrigger value="presentations" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                <TabsTrigger value="presentations" className="flex basis-[calc(33.333%-0.25rem)] flex-1 items-center justify-center gap-1 px-2 py-2 text-xs rounded-md data-[state=active]:bg-background">
                   <Presentation className="w-3.5 h-3.5" />
                   <span>PPT</span>
                 </TabsTrigger>
-                <TabsTrigger value="polls" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                <TabsTrigger value="polls" className="flex basis-[calc(33.333%-0.25rem)] flex-1 items-center justify-center gap-1 px-2 py-2 text-xs rounded-md data-[state=active]:bg-background">
                   <BarChart3 className="w-3.5 h-3.5" />
                   <span>Polls</span>
                 </TabsTrigger>
-                <TabsTrigger value="calendar" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                <TabsTrigger value="calendar" className="flex basis-[calc(33.333%-0.25rem)] flex-1 items-center justify-center gap-1 px-2 py-2 text-xs rounded-md data-[state=active]:bg-background">
                   <CalendarIcon className="w-3.5 h-3.5" />
                   <span>Cal</span>
                 </TabsTrigger>
-                <TabsTrigger value="documents" className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs rounded-md whitespace-nowrap data-[state=active]:bg-background">
+                <TabsTrigger value="documents" className="flex basis-[calc(33.333%-0.25rem)] flex-1 items-center justify-center gap-1 px-2 py-2 text-xs rounded-md data-[state=active]:bg-background">
                   <Paperclip className="w-3.5 h-3.5" />
                   <span>Docs</span>
                 </TabsTrigger>
@@ -612,6 +615,7 @@ const ClassRoom = () => {
         <MultiUserVideoCall 
           classId={classId!} 
           userId={user.id} 
+          sessionIdOverride={joinCallSessionId ?? undefined}
           onClose={() => setShowVideoCall(false)}
         />
       )}

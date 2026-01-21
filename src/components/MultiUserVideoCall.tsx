@@ -9,6 +9,8 @@ import { toast } from "sonner";
 interface MultiUserVideoCallProps {
   classId: string;
   userId: string;
+  /** If provided, join this exact session (used when user clicks "Join" from notification). */
+  sessionIdOverride?: string;
   onClose: () => void;
 }
 
@@ -89,7 +91,7 @@ const iceServers = {
   iceCandidatePoolSize: 10
 };
 
-const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProps) => {
+const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: MultiUserVideoCallProps) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isMuted, setIsMuted] = useState(false);
@@ -398,6 +400,13 @@ const MultiUserVideoCall = ({ classId, userId, onClose }: MultiUserVideoCallProp
       
       if (classData) {
         setClassName(classData.name);
+      }
+
+      // If user is joining from notification, join that exact session
+      if (sessionIdOverride) {
+        setSessionId(sessionIdOverride);
+        await joinSession(sessionIdOverride);
+        return;
       }
 
       // Check if there's an active session
