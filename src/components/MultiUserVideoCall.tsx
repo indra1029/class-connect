@@ -437,44 +437,11 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         setSessionId(newSession.id);
         await joinSession(newSession.id);
         
-        // Notify all class members about the new call
-        await notifyClassMembers(newSession.id);
+        // Notification is now handled automatically by database trigger
+        // which includes the correct joinCall session ID in the link
       }
     } catch (error: any) {
       toast.error("Failed to initialize call: " + error.message);
-    }
-  };
-
-  const notifyClassMembers = async (sessionId: string) => {
-    try {
-      // Get current user's name
-      const { data: userProfile } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", userId)
-        .single();
-
-      // Get all class members except current user
-      const { data: members } = await supabase
-        .from("class_members")
-        .select("user_id")
-        .eq("class_id", classId)
-        .neq("user_id", userId);
-
-      if (members && members.length > 0) {
-        const notifications = members.map((member) => ({
-          user_id: member.user_id,
-          title: "📹 Video Call Started",
-          message: `${userProfile?.full_name || "Someone"} started a video call in ${className || "your class"}`,
-          type: "video_call",
-          link: `/class/${classId}?joinCall=${sessionId}`,
-          read: false,
-        }));
-
-        await supabase.from("notifications").insert(notifications);
-      }
-    } catch (error) {
-      console.error("Error notifying class members:", error);
     }
   };
 
