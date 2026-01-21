@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, Eye, EyeOff, X } from "lucide-react";
 import { toast } from "sonner";
+import { getSignedFileUrl } from "@/lib/storage";
 
 interface Presentation {
   id: string;
@@ -21,7 +22,24 @@ interface PresentationViewerProps {
 export const PresentationViewer = ({ classId, isAdmin }: PresentationViewerProps) => {
   const [presentations, setPresentations] = useState<Presentation[]>([]);
   const [activePresentation, setActivePresentation] = useState<Presentation | null>(null);
+  const [activePresentationUrl, setActivePresentationUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // Generate signed URL for active presentation
+  const loadSignedUrl = useCallback(async (presentation: Presentation | null) => {
+    if (!presentation) {
+      setActivePresentationUrl(null);
+      return;
+    }
+    
+    try {
+      const signedUrl = await getSignedFileUrl(presentation.file_url, 7200); // 2 hour expiry
+      setActivePresentationUrl(signedUrl);
+    } catch (error) {
+      console.error('Failed to get signed URL:', error);
+      setActivePresentationUrl(null);
+    }
+  }, []);
 
   useEffect(() => {
     loadPresentations();
@@ -44,6 +62,11 @@ export const PresentationViewer = ({ classId, isAdmin }: PresentationViewerProps
       supabase.removeChannel(channel);
     };
   }, [classId]);
+
+  // Load signed URL when active presentation changes
+  useEffect(() => {
+    loadSignedUrl(activePresentation);
+  }, [activePresentation, loadSignedUrl]);
 
   const loadPresentations = async () => {
     const { data, error } = await supabase
@@ -95,14 +118,11 @@ export const PresentationViewer = ({ classId, isAdmin }: PresentationViewerProps
       return;
     }
 
-    const { data: { publicUrl } } = supabase.storage
-      .from("class-files")
-      .getPublicUrl(filePath);
-
+    // Store the file path (not public URL) for later signed URL generation
     const { error: dbError } = await supabase.from("presentations").insert({
       class_id: classId,
       user_id: user.id,
-      file_url: publicUrl,
+      file_url: filePath, // Store path, not URL
       file_name: file.name,
       is_active: false,
     });
@@ -116,6 +136,15 @@ export const PresentationViewer = ({ classId, isAdmin }: PresentationViewerProps
     toast.success("Presentation uploaded");
     setUploading(false);
     e.target.value = "";
+  };
+
+  const handleDownload = async (fileUrl: string) => {
+    try {
+      const signedUrl = await getSignedFileUrl(fileUrl);
+      window.open(signedUrl, '_blank');
+    } catch (error) {
+      toast.error("Failed to download file");
+    }
   };
 
   const togglePresentation = async (presentation: Presentation) => {
@@ -184,24 +213,35 @@ export const PresentationViewer = ({ classId, isAdmin }: PresentationViewerProps
           </CardHeader>
           <CardContent>
             <div className="relative w-full h-[600px] bg-muted rounded-lg overflow-hidden">
-              {activePresentation.file_name.toLowerCase().endsWith('.pdf') ? (
-                <object
-                  data={activePresentation.file_url}
-                  type="application/pdf"
-                  className="w-full h-full"
-                >
-                  <embed
-                    src={`${activePresentation.file_url}#toolbar=1&navpanes=1&scrollbar=1`}
+              {activePresentationUrl ? (
+                activePresentation.file_name.toLowerCase().endsWith('.pdf') ? (
+                  <object
+                    data={activePresentationUrl}
                     type="application/pdf"
                     className="w-full h-full"
-                  />
-                </object>
+                  >
+                    <embed
+                      src={`${activePresentationUrl}#toolbar=1&navpanes=1&scrollbar=1`}
+                      type="application/pdf"
+                      className="w-full h-full"
+                    />
+                  </object>
+                ) : (
+                  // Note: PPT files with signed URLs won't work with Office Online viewer
+                  // because the signed URL is too long and expires
+                  <div className="flex flex-col items-center justify-center h-full text-center p-4">
+                    <p className="text-muted-foreground mb-4">
+                      PowerPoint preview not available for secured files.
+                    </p>
+                    <Button onClick={() => handleDownload(activePresentation.file_url)}>
+                      Download to View
+                    </Button>
+                  </div>
+                )
               ) : (
-                <iframe
-                  src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(activePresentation.file_url)}`}
-                  className="w-full h-full border-0"
-                  title={activePresentation.file_name}
-                />
+                <div className="flex items-center justify-center h-full">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
               )}
             </div>
             <div className="flex items-center justify-between mt-2">
@@ -211,7 +251,7 @@ export const PresentationViewer = ({ classId, isAdmin }: PresentationViewerProps
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => window.open(activePresentation.file_url, '_blank')}
+                onClick={() => handleDownload(activePresentation.file_url)}
               >
                 Download
               </Button>

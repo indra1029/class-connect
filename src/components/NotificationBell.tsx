@@ -97,7 +97,13 @@ const NotificationBell = ({ userId }: { userId: string }) => {
   const handleNotificationClick = (notif: Notification) => {
     markAsRead(notif.id);
     if (notif.link) {
-      navigate(notif.link);
+      // Security: Only allow internal navigation (relative paths)
+      // This prevents open redirect attacks if notification links are ever user-controlled
+      if (notif.link.startsWith('/') || notif.link.startsWith('#')) {
+        navigate(notif.link);
+      } else {
+        console.warn('External notification link blocked:', notif.link);
+      }
     }
   };
 

@@ -296,8 +296,7 @@ const ClassRoom = () => {
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage.from("class-files").getPublicUrl(fileName);
-
+      // Store the file path (not public URL) for later signed URL generation
       if (isPresentationFile) {
         // Add to presentations table for admin
         const { error: presentationError } = await supabase
@@ -305,7 +304,7 @@ const ClassRoom = () => {
           .insert({
             class_id: classId,
             user_id: user!.id,
-            file_url: data.publicUrl,
+            file_url: fileName, // Store path, not URL
             file_name: file.name,
             is_active: false,
           });
@@ -324,7 +323,7 @@ const ClassRoom = () => {
             class_id: classId,
             user_id: user!.id,
             content: file.name,
-            file_url: data.publicUrl,
+            file_url: fileName, // Store path, not URL
             file_type: file.type,
             file_name: file.name,
           });

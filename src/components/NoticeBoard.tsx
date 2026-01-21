@@ -10,6 +10,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Pin, PinOff, Image as ImageIcon, FileText, Trash2, Upload } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { z } from "zod";
+import { SecureImage } from "@/components/SecureImage";
+import { SecureFileLink } from "@/components/SecureFileLink";
 
 interface NoticeBoardItem {
   id: string;
@@ -142,10 +144,7 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("class-files")
-        .getPublicUrl(filePath);
-
+      // Store the file path (not public URL) for later signed URL generation
       const isImage = file.type.startsWith("image/");
       
       toast({
@@ -154,7 +153,7 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
       });
 
       return {
-        url: publicUrl,
+        url: filePath, // Store path, not URL
         name: file.name,
         type: isImage ? "image" : "file",
       };
@@ -499,7 +498,7 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
                 
                 {item.image_url && (
                   <div className="rounded-xl overflow-hidden border-2 border-border bg-muted/20">
-                    <img
+                    <SecureImage
                       src={item.image_url}
                       alt="Notice board attachment"
                       className="w-full h-auto object-contain max-h-[500px] bg-background"
@@ -509,25 +508,10 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
                 )}
                 
                 {item.file_url && item.file_name && (
-                  <a
-                    href={item.file_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 p-4 bg-primary/5 border-2 border-primary/20 rounded-xl hover:bg-primary/10 hover:border-primary/30 transition-all group"
-                  >
-                    <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
-                      <FileText className="w-6 h-6 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">
-                        {item.file_name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Click to open or download
-                      </p>
-                    </div>
-                    <Upload className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-                  </a>
+                  <SecureFileLink
+                    fileUrl={item.file_url}
+                    fileName={item.file_name}
+                  />
                 )}
               </CardContent>
             </Card>
