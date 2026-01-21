@@ -165,8 +165,8 @@ All colors MUST be HSL.
 
   /* Fix tabs overflow - force proper width */
   [role="tablist"] {
-    max-width: calc(100vw - 1rem) !important;
-    overflow-x: auto !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
   }
 
   /* Prevent any element from causing horizontal scroll */
