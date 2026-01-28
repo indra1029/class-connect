@@ -12,7 +12,7 @@ export const getSignedFileUrl = async (
   fileUrlOrPath: string,
   expiresInSeconds: number = 3600
 ): Promise<string> => {
-  // If it's already a signed URL or external URL, return as-is
+  // If it's empty, return as-is
   if (!fileUrlOrPath) return fileUrlOrPath;
   
   // Check if this is a Supabase storage URL
@@ -29,10 +29,24 @@ export const getSignedFileUrl = async (
   else if (fileUrlOrPath.startsWith('class-files/')) {
     filePath = fileUrlOrPath.replace('class-files/', '');
   }
-  // If it's not a Supabase URL or path, return as-is (external URLs, etc.)
-  else if (!fileUrlOrPath.includes(supabaseUrl) && !fileUrlOrPath.startsWith('/')) {
+  // If it's already a signed URL (contains token parameter), return as-is
+  else if (fileUrlOrPath.includes('/storage/v1/object/sign/') || fileUrlOrPath.includes('token=')) {
     return fileUrlOrPath;
   }
+  // Handle external URLs (http/https that are not from our Supabase)
+  else if ((fileUrlOrPath.startsWith('http://') || fileUrlOrPath.startsWith('https://')) && !fileUrlOrPath.includes(supabaseUrl)) {
+    return fileUrlOrPath;
+  }
+  // Handle data URLs
+  else if (fileUrlOrPath.startsWith('data:')) {
+    return fileUrlOrPath;
+  }
+  // Handle blob URLs
+  else if (fileUrlOrPath.startsWith('blob:')) {
+    return fileUrlOrPath;
+  }
+  // For relative paths that look like storage paths (e.g., "classId/filename.png"),
+  // we assume they are storage paths and try to create a signed URL
   
   // Decode the path in case it was URL encoded
   filePath = decodeURIComponent(filePath);
