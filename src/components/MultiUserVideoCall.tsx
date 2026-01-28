@@ -184,8 +184,15 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       })
       .on("broadcast", { event: "user-joined" }, async ({ payload }) => {
         if (payload.userId !== userId && localStream.current) {
-          // Create offer for the new participant
-          await createOffer(payload.userId);
+          // Use "polite" peer pattern - only the user with smaller ID creates the offer
+          // This prevents both sides from creating offers simultaneously
+          const shouldCreateOffer = userId < payload.userId;
+          if (shouldCreateOffer) {
+            console.log("I am polite peer, creating offer to:", payload.userId);
+            await createOffer(payload.userId);
+          } else {
+            console.log("I am impolite peer, waiting for offer from:", payload.userId);
+          }
         }
       })
       .on("broadcast", { event: "chat-message" }, ({ payload }) => {
@@ -204,7 +211,17 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           setUnreadCount(prev => prev + 1);
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log("Signaling channel status:", status);
+        if (status === 'SUBSCRIBED') {
+          // Broadcast that we've joined so other participants know to connect
+          channel.send({
+            type: "broadcast",
+            event: "user-joined",
+            payload: { userId }
+          });
+        }
+      });
 
     channelRef.current = channel;
   };
@@ -503,18 +520,14 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         async (payload) => {
           await fetchParticipants();
           
-          // When a new participant joins, create offers
+          // When a new participant joins via database, also trigger connection
           if (payload.eventType === 'INSERT' && payload.new.user_id !== userId && localStream.current) {
-            // Broadcast that we joined so others can send offers
-            if (channelRef.current) {
-              channelRef.current.send({
-                type: "broadcast",
-                event: "user-joined",
-                payload: { userId }
-              });
+            // Use polite peer pattern here too
+            const shouldCreateOffer = userId < payload.new.user_id;
+            if (shouldCreateOffer) {
+              console.log("New participant detected via DB, creating offer to:", payload.new.user_id);
+              setTimeout(() => createOffer(payload.new.user_id), 1000);
             }
-            // Also create offer to the new participant
-            setTimeout(() => createOffer(payload.new.user_id), 500);
           }
         }
       )
@@ -555,10 +568,15 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       setParticipants(participantsWithNames);
       
       // Create offers for existing participants we don't have connections with
+      // Use polite peer pattern - only create offer if our ID is smaller
       const otherParticipants = participantsWithNames.filter(p => p.user_id !== userId);
       for (const participant of otherParticipants) {
         if (!peerConnections.current.has(participant.user_id) && localStream.current) {
-          await createOffer(participant.user_id);
+          const shouldCreateOffer = userId < participant.user_id;
+          if (shouldCreateOffer) {
+            console.log("Creating offer to existing participant:", participant.user_id);
+            await createOffer(participant.user_id);
+          }
         }
       }
     } catch (error: any) {
