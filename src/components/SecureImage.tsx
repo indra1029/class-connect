@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { getSignedFileUrl } from "@/lib/storage";
 
 interface SecureImageProps {
@@ -15,16 +15,19 @@ interface SecureImageProps {
 export const SecureImage = ({ src, alt, className, loading = "lazy" }: SecureImageProps) => {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const normalizedSrc = useMemo(() => (src || "").trim(), [src]);
 
   useEffect(() => {
     const loadUrl = async () => {
-      if (!src) {
+      if (!normalizedSrc) {
         setSignedUrl(null);
         return;
       }
       
       try {
-        const url = await getSignedFileUrl(src, 3600); // 1 hour
+        const url = await getSignedFileUrl(normalizedSrc, 3600); // 1 hour
         setSignedUrl(url);
         setError(false);
       } catch (err) {
@@ -34,7 +37,7 @@ export const SecureImage = ({ src, alt, className, loading = "lazy" }: SecureIma
     };
 
     loadUrl();
-  }, [src]);
+  }, [normalizedSrc, retryCount]);
 
   if (error) {
     return (
@@ -58,6 +61,15 @@ export const SecureImage = ({ src, alt, className, loading = "lazy" }: SecureIma
       alt={alt}
       className={className}
       loading={loading}
+      onError={() => {
+        // If the signed URL expired or was blocked transiently, try re-sign once.
+        if (retryCount < 1) {
+          setRetryCount((c) => c + 1);
+          setSignedUrl(null);
+          return;
+        }
+        setError(true);
+      }}
     />
   );
 };
