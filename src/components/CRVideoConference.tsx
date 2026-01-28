@@ -1,9 +1,11 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { iceServers, isScreenShareSupported } from "@/lib/webrtc";
 import {
   Maximize,
   Minimize,
@@ -17,13 +19,6 @@ import {
   Users,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
-// Detect if screen sharing is supported
-const isScreenShareSupported = () => {
-  return typeof navigator !== 'undefined' && 
-         navigator.mediaDevices && 
-         typeof navigator.mediaDevices.getDisplayMedia === 'function';
-};
 
 interface Participant {
   user_id: string;
@@ -45,18 +40,26 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const canScreenShare = isScreenShareSupported();
+  const isMobile = useIsMobile();
+  const canScreenShare = !isMobile && isScreenShareSupported();
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
 
+  const channelRef = useRef<any>(null);
+  const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const remoteStreams = useRef<Map<string, MediaStream>>(new Map());
+  const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
+
   useEffect(() => {
     initializeMedia();
     joinSession();
-    subscribeToParticipants();
+    const unsub = subscribeToParticipants();
+    setupSignaling();
 
     return () => {
+      unsub?.();
       cleanup();
     };
   }, [sessionId]);
@@ -91,14 +94,26 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
 
   const joinSession = async () => {
     try {
-      const { error } = await supabase
+      // Avoid duplicate row errors if the user re-joins.
+      const { data: existing } = await supabase
         .from("cr_video_participants")
-        .insert({
-          session_id: sessionId,
-          user_id: user.id,
-        });
+        .select("id")
+        .eq("session_id", sessionId)
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-      if (error) throw error;
+      if (existing?.id) {
+        const { error } = await supabase
+          .from("cr_video_participants")
+          .update({ is_active: true, joined_at: new Date().toISOString(), left_at: null })
+          .eq("id", existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("cr_video_participants")
+          .insert({ session_id: sessionId, user_id: user.id, is_active: true });
+        if (error) throw error;
+      }
     } catch (error: any) {
       console.error("Error joining session:", error);
       toast({
@@ -122,9 +137,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
           table: "cr_video_participants",
           filter: `session_id=eq.${sessionId}`,
         },
-        () => {
-          fetchParticipants();
-        }
+        () => fetchParticipants()
       )
       .subscribe();
 
@@ -132,6 +145,159 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
       supabase.removeChannel(channel);
     };
   };
+
+  // --- WebRTC signaling (CR room) ---
+  const setupSignaling = () => {
+    const channel = supabase.channel(`cr-webrtc-${sessionId}`, {
+      config: { broadcast: { self: false } },
+    });
+
+    channel
+      .on("broadcast", { event: "offer" }, async ({ payload }) => {
+        if (payload.to === user.id) await handleOffer(payload);
+      })
+      .on("broadcast", { event: "answer" }, async ({ payload }) => {
+        if (payload.to === user.id) await handleAnswer(payload);
+      })
+      .on("broadcast", { event: "ice-candidate" }, async ({ payload }) => {
+        if (payload.to === user.id) await handleIceCandidate(payload);
+      })
+      .on("broadcast", { event: "user-joined" }, async ({ payload }) => {
+        if (!localStreamRef.current) return;
+        if (payload.userId === user.id) return;
+        // Polite peer: smaller ID initiates
+        const shouldCreateOffer = user.id < payload.userId;
+        if (shouldCreateOffer) {
+          await createOffer(payload.userId);
+        }
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          channel.send({
+            type: "broadcast",
+            event: "user-joined",
+            payload: { userId: user.id },
+          });
+        }
+      });
+
+    channelRef.current = channel;
+  };
+
+  const createPeerConnection = (peerId: string) => {
+    const existing = peerConnections.current.get(peerId);
+    if (existing) {
+      existing.close();
+      peerConnections.current.delete(peerId);
+    }
+
+    const pc = new RTCPeerConnection(iceServers);
+
+    // Add tracks
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => pc.addTrack(t, localStreamRef.current!));
+    }
+
+    pc.ontrack = (event) => {
+      const [stream] = event.streams;
+      if (!stream) return;
+      remoteStreams.current.set(peerId, stream);
+      const el = remoteVideoRefs.current.get(peerId);
+      if (el) el.srcObject = stream;
+    };
+
+    pc.onicecandidate = (event) => {
+      if (!event.candidate || !channelRef.current) return;
+      channelRef.current.send({
+        type: "broadcast",
+        event: "ice-candidate",
+        payload: {
+          candidate: event.candidate.toJSON(),
+          to: peerId,
+          from: user.id,
+        },
+      });
+    };
+
+    pc.onconnectionstatechange = () => {
+      const state = pc.connectionState;
+      if (state === "failed" || state === "disconnected") {
+        remoteStreams.current.delete(peerId);
+      }
+    };
+
+    peerConnections.current.set(peerId, pc);
+    return pc;
+  };
+
+  const createOffer = async (peerId: string) => {
+    try {
+      const pc = createPeerConnection(peerId);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "offer",
+        payload: {
+          offer: pc.localDescription?.toJSON(),
+          to: peerId,
+          from: user.id,
+        },
+      });
+    } catch (e) {
+      console.error("CR createOffer error", e);
+    }
+  };
+
+  const handleOffer = async (payload: { offer: RTCSessionDescriptionInit; from: string }) => {
+    try {
+      const pc = createPeerConnection(payload.from);
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "answer",
+        payload: {
+          answer: pc.localDescription?.toJSON(),
+          to: payload.from,
+          from: user.id,
+        },
+      });
+    } catch (e) {
+      console.error("CR handleOffer error", e);
+    }
+  };
+
+  const handleAnswer = async (payload: { answer: RTCSessionDescriptionInit; from: string }) => {
+    try {
+      const pc = peerConnections.current.get(payload.from);
+      if (!pc) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
+    } catch (e) {
+      console.error("CR handleAnswer error", e);
+    }
+  };
+
+  const handleIceCandidate = async (payload: { candidate: RTCIceCandidateInit; from: string }) => {
+    try {
+      const pc = peerConnections.current.get(payload.from);
+      if (!pc) return;
+      await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+    } catch (e) {
+      console.error("CR handleIceCandidate error", e);
+    }
+  };
+
+  const setRemoteVideoRef = useCallback((peerId: string, el: HTMLVideoElement | null) => {
+    if (el) {
+      remoteVideoRefs.current.set(peerId, el);
+      const stream = remoteStreams.current.get(peerId);
+      if (stream) el.srcObject = stream;
+    } else {
+      remoteVideoRefs.current.delete(peerId);
+    }
+  }, []);
 
   const fetchParticipants = async () => {
     try {
@@ -168,6 +334,19 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
       }) || [];
 
       setParticipants(participantsList);
+
+      // Connect to existing participants (multi-user)
+      if (localStreamRef.current) {
+        const others = participantsList.filter((p) => p.user_id !== user.id);
+        for (const p of others) {
+          if (!peerConnections.current.has(p.user_id)) {
+            const shouldCreateOffer = user.id < p.user_id;
+            if (shouldCreateOffer) {
+              await createOffer(p.user_id);
+            }
+          }
+        }
+      }
     } catch (error: any) {
       console.error("Error fetching participants:", error);
     }
@@ -210,6 +389,14 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   };
 
   const toggleScreenShare = async () => {
+    if (isMobile) {
+      toast({
+        variant: "destructive",
+        title: "Not Supported",
+        description: "Screen sharing is not supported on mobile devices",
+      });
+      return;
+    }
     if (!canScreenShare) {
       toast({
         variant: "destructive",
@@ -288,11 +475,22 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   };
 
   const cleanup = () => {
+    // Stop tracks
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
     }
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach((track) => track.stop());
+    }
+
+    // Close webrtc
+    peerConnections.current.forEach((pc) => pc.close());
+    peerConnections.current.clear();
+    remoteStreams.current.clear();
+
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
     }
   };
 
@@ -320,22 +518,39 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
         {/* Other Participants */}
         {participants
           .filter((p) => p.user_id !== user.id)
-          .map((participant) => (
-            <div
-              key={participant.user_id}
-              className="relative bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center"
-            >
-              <Avatar className="w-24 h-24">
-                <AvatarImage src={participant.avatar_url || ""} />
-                <AvatarFallback className="bg-gradient-hero text-white text-3xl">
-                  {participant.full_name.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="absolute bottom-2 left-2 bg-black/70 px-3 py-1 rounded-full text-white text-sm">
-                {participant.full_name}
+          .map((participant) => {
+            const hasStream = remoteStreams.current.has(participant.user_id);
+            return (
+              <div
+                key={participant.user_id}
+                className="relative bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center"
+              >
+                {hasStream ? (
+                  <video
+                    ref={(el) => setRemoteVideoRef(participant.user_id, el)}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <>
+                    <Avatar className="w-24 h-24">
+                      <AvatarImage src={participant.avatar_url || ""} />
+                      <AvatarFallback className="bg-gradient-hero text-white text-3xl">
+                        {participant.full_name.charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded-full text-white text-xs">
+                      Connecting…
+                    </div>
+                  </>
+                )}
+                <div className="absolute bottom-2 left-2 bg-black/70 px-3 py-1 rounded-full text-white text-sm">
+                  {participant.full_name}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
       </div>
 
       {/* Controls */}

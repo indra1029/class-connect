@@ -5,6 +5,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Video, VideoOff, Mic, MicOff, PhoneOff, Monitor, Users, MonitorOff, X, MessageCircle, Send } from "lucide-react";
 import { toast } from "sonner";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { iceServers, isScreenShareSupported } from "@/lib/webrtc";
 
 interface MultiUserVideoCallProps {
   classId: string;
@@ -34,62 +36,6 @@ interface ChatMessage {
   timestamp: Date;
 }
 
-// Detect if screen sharing is supported
-const isScreenShareSupported = () => {
-  return typeof navigator !== 'undefined' && 
-         navigator.mediaDevices && 
-         typeof navigator.mediaDevices.getDisplayMedia === 'function';
-};
-
-// ICE servers configuration for WebRTC with TURN servers for NAT traversal
-const iceServers = {
-  iceServers: [
-    // STUN servers
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-    { urls: "stun:stun3.l.google.com:19302" },
-    { urls: "stun:stun4.l.google.com:19302" },
-    // Free public TURN servers (Metered.ca free tier)
-    {
-      urls: "turn:a.relay.metered.ca:80",
-      username: "e8dd65a92d3b6b9f8c4e2b1a",
-      credential: "kNxV+5Yd/hK3HmPq"
-    },
-    {
-      urls: "turn:a.relay.metered.ca:80?transport=tcp",
-      username: "e8dd65a92d3b6b9f8c4e2b1a",
-      credential: "kNxV+5Yd/hK3HmPq"
-    },
-    {
-      urls: "turn:a.relay.metered.ca:443",
-      username: "e8dd65a92d3b6b9f8c4e2b1a",
-      credential: "kNxV+5Yd/hK3HmPq"
-    },
-    {
-      urls: "turn:a.relay.metered.ca:443?transport=tcp",
-      username: "e8dd65a92d3b6b9f8c4e2b1a",
-      credential: "kNxV+5Yd/hK3HmPq"
-    },
-    // Backup TURN servers (Open Relay Project)
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject"
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject"
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject"
-    }
-  ],
-  iceCandidatePoolSize: 10
-};
 
 const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: MultiUserVideoCallProps) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -101,7 +47,8 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
   const [callDuration, setCallDuration] = useState<string>("00:00");
   const [showParticipants, setShowParticipants] = useState(false);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
-  const canScreenShare = isScreenShareSupported();
+  const isMobile = useIsMobile();
+  const canScreenShare = !isMobile && isScreenShareSupported();
   
   // Chat state
   const [showChat, setShowChat] = useState(false);
@@ -118,6 +65,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
   const durationInterval = useRef<NodeJS.Timeout | null>(null);
   const channelRef = useRef<any>(null);
   const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const participantUnsubRef = useRef<null | (() => void)>(null);
 
   useEffect(() => {
     initializeCall();
@@ -141,9 +89,14 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
   useEffect(() => {
     if (sessionId) {
-      subscribeToParticipants();
+      participantUnsubRef.current?.();
+      participantUnsubRef.current = subscribeToParticipants();
       setupSignaling();
     }
+    return () => {
+      participantUnsubRef.current?.();
+      participantUnsubRef.current = null;
+    };
   }, [sessionId]);
 
   // Auto-scroll chat to bottom when new messages arrive
@@ -605,6 +558,10 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
   };
 
   const toggleScreenShare = async () => {
+    if (isMobile) {
+      toast.error("Screen sharing is not supported on mobile devices");
+      return;
+    }
     if (!canScreenShare) {
       toast.error("Screen sharing is not supported on this device");
       return;
