@@ -51,18 +51,33 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   const remoteStreams = useRef<Map<string, MediaStream>>(new Map());
   const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     initializeMedia();
     joinSession();
     const unsub = subscribeToParticipants();
     setupSignaling();
+    startHeartbeat();
 
     return () => {
       unsub?.();
       cleanup();
+      if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
     };
   }, [sessionId]);
+
+  // Heartbeat to mark user as alive every 5s
+  const startHeartbeat = () => {
+    if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
+    heartbeatInterval.current = setInterval(async () => {
+      await supabase
+        .from("cr_video_participants")
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq("session_id", sessionId)
+        .eq("user_id", user.id);
+    }, 5000);
+  };
 
   const initializeMedia = async () => {
     try {
@@ -301,11 +316,15 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
 
   const fetchParticipants = async () => {
     try {
+      // Filter out stale participants (not seen in 15 seconds)
+      const staleThreshold = new Date(Date.now() - 15000).toISOString();
+
       const { data: participantsData, error: participantsError } = await supabase
         .from("cr_video_participants")
-        .select("user_id, is_active")
+        .select("user_id, is_active, last_seen_at")
         .eq("session_id", sessionId)
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .gte("last_seen_at", staleThreshold);
 
       if (participantsError) throw participantsError;
 
@@ -502,7 +521,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
       {/* Video Grid */}
       <div className="flex-1 relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-4">
         {/* Local Video */}
-        <div className="relative bg-gray-900 rounded-lg overflow-hidden">
+        <div className="relative bg-muted rounded-lg overflow-hidden">
           <video
             ref={localVideoRef}
             autoPlay
@@ -510,7 +529,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
             muted
             className="w-full h-full object-cover"
           />
-          <div className="absolute bottom-2 left-2 bg-black/70 px-3 py-1 rounded-full text-white text-sm">
+          <div className="absolute bottom-2 left-2 bg-primary/80 px-3 py-1 rounded-full text-primary-foreground text-sm">
             You {isScreenSharing && "(Sharing Screen)"}
           </div>
         </div>
@@ -523,7 +542,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
             return (
               <div
                 key={participant.user_id}
-                className="relative bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center"
+                className="relative bg-muted rounded-lg overflow-hidden flex items-center justify-center"
               >
                 {hasStream ? (
                   <video
@@ -536,16 +555,16 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
                   <>
                     <Avatar className="w-24 h-24">
                       <AvatarImage src={participant.avatar_url || ""} />
-                      <AvatarFallback className="bg-gradient-hero text-white text-3xl">
+                      <AvatarFallback className="bg-primary text-primary-foreground text-3xl">
                         {participant.full_name.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded-full text-white text-xs">
+                    <div className="absolute top-2 right-2 bg-accent/80 px-2 py-1 rounded-full text-accent-foreground text-xs">
                       Connecting…
                     </div>
                   </>
                 )}
-                <div className="absolute bottom-2 left-2 bg-black/70 px-3 py-1 rounded-full text-white text-sm">
+                <div className="absolute bottom-2 left-2 bg-accent/80 px-3 py-1 rounded-full text-accent-foreground text-sm">
                   {participant.full_name}
                 </div>
               </div>

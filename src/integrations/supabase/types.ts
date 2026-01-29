@@ -187,6 +187,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           joined_at: string
+          last_seen_at: string
           left_at: string | null
           session_id: string
           user_id: string
@@ -195,6 +196,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           joined_at?: string
+          last_seen_at?: string
           left_at?: string | null
           session_id: string
           user_id: string
@@ -203,6 +205,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           joined_at?: string
+          last_seen_at?: string
           left_at?: string | null
           session_id?: string
           user_id?: string
@@ -658,6 +661,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           joined_at: string
+          last_seen_at: string
           left_at: string | null
           session_id: string
           user_id: string
@@ -666,6 +670,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           joined_at?: string
+          last_seen_at?: string
           left_at?: string | null
           session_id: string
           user_id: string
@@ -674,6 +679,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           joined_at?: string
+          last_seen_at?: string
           left_at?: string | null
           session_id?: string
           user_id?: string
