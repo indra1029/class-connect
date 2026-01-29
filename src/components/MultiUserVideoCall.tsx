@@ -66,6 +66,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
   const channelRef = useRef<any>(null);
   const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const participantUnsubRef = useRef<null | (() => void)>(null);
+  const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     initializeCall();
@@ -84,6 +85,9 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       if (durationInterval.current) {
         clearInterval(durationInterval.current);
       }
+      if (heartbeatInterval.current) {
+        clearInterval(heartbeatInterval.current);
+      }
     };
   }, []);
 
@@ -92,12 +96,27 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       participantUnsubRef.current?.();
       participantUnsubRef.current = subscribeToParticipants();
       setupSignaling();
+      startHeartbeat();
     }
     return () => {
       participantUnsubRef.current?.();
       participantUnsubRef.current = null;
     };
   }, [sessionId]);
+
+  // Start heartbeat to mark this user as alive (prevents ghost participants)
+  const startHeartbeat = () => {
+    if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
+    heartbeatInterval.current = setInterval(async () => {
+      if (sessionId) {
+        await supabase
+          .from("video_call_participants")
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq("session_id", sessionId)
+          .eq("user_id", userId);
+      }
+    }, 5000); // every 5 seconds
+  };
 
   // Auto-scroll chat to bottom when new messages arrive
   useEffect(() => {
@@ -495,16 +514,25 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
   const fetchParticipants = async () => {
     try {
+      // Compute 15-second threshold to filter stale participants
+      const staleThreshold = new Date(Date.now() - 15000).toISOString();
+
       const { data, error } = await supabase
         .from("video_call_participants")
-        .select("user_id, is_active")
+        .select("user_id, is_active, last_seen_at")
         .eq("session_id", sessionId)
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .gte("last_seen_at", staleThreshold);
 
       if (error) throw error;
 
       // Fetch user names and avatars
       const userIds = data?.map(p => p.user_id) || [];
+      if (userIds.length === 0) {
+        setParticipants([]);
+        return;
+      }
+
       const { data: profiles } = await supabase
         .from("profiles")
         .select("id, full_name, avatar_url")
@@ -729,12 +757,12 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
   const otherParticipants = participants.filter(p => p.user_id !== userId);
 
   return (
-    <div className="video-call-container fixed inset-0 z-50 bg-[hsl(220,25%,8%)] flex flex-col overflow-hidden">
+    <div className="video-call-container fixed inset-0 z-50 bg-background flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-[hsl(220,25%,12%)] px-3 py-2 flex items-center justify-between shrink-0 safe-area-top">
+      <div className="bg-card px-3 py-2 flex items-center justify-between shrink-0 safe-area-top border-b border-border">
         <button 
           onClick={endCall}
-          className="p-2 text-muted-foreground hover:text-foreground rounded-full"
+          className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted"
         >
           <X className="w-5 h-5" />
         </button>
@@ -746,7 +774,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         
         <button 
           onClick={() => setShowParticipants(!showParticipants)}
-          className="p-2 text-muted-foreground hover:text-foreground rounded-full flex items-center gap-1"
+          className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted flex items-center gap-1"
         >
           <Users className="w-5 h-5" />
           <span className="text-xs">{participants.length}</span>
@@ -754,10 +782,10 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       </div>
 
       {/* Video Grid - WhatsApp style */}
-      <div className="flex-1 overflow-hidden p-2">
+      <div className="flex-1 overflow-hidden p-2 bg-muted/30">
         <div className={`grid ${getGridClass()} gap-2 h-full auto-rows-fr`}>
           {/* Current user's video */}
-          <div className="relative rounded-xl overflow-hidden bg-[hsl(220,25%,15%)] border-2 border-primary/60 min-h-[120px]">
+          <div className="relative rounded-xl overflow-hidden bg-muted border-2 border-primary/60 min-h-[120px]">
             <video
               ref={localVideoRef}
               autoPlay
@@ -766,7 +794,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
               className={`w-full h-full object-cover ${isVideoOff ? 'hidden' : ''}`}
             />
             {isVideoOff && (
-              <div className="absolute inset-0 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center justify-center bg-muted">
                 <Avatar className="w-14 h-14 sm:w-20 sm:h-20">
                   <AvatarImage src={currentUser?.avatar_url || ""} />
                   <AvatarFallback className="bg-primary text-primary-foreground text-xl sm:text-2xl">
@@ -776,11 +804,11 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
               </div>
             )}
             <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-              <span className="text-xs font-medium text-primary bg-black/60 px-2 py-0.5 rounded-full">
+              <span className="text-xs font-medium text-primary-foreground bg-primary/80 px-2 py-0.5 rounded-full">
                 You
               </span>
               {isMuted && (
-                <span className="text-xs bg-destructive/80 text-white px-1.5 py-0.5 rounded-full flex items-center">
+                <span className="text-xs bg-destructive text-destructive-foreground px-1.5 py-0.5 rounded-full flex items-center">
                   <MicOff className="w-3 h-3" />
                 </span>
               )}
@@ -798,7 +826,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
             return (
               <div 
                 key={participant.user_id}
-                className="relative rounded-xl overflow-hidden bg-[hsl(220,25%,15%)] border-2 border-accent/40 min-h-[120px]"
+                className="relative rounded-xl overflow-hidden bg-muted border-2 border-accent/40 min-h-[120px]"
               >
                 {hasStream ? (
                   <video
@@ -808,7 +836,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="absolute inset-0 flex items-center justify-center bg-muted">
                     <div className="text-center">
                       <Avatar className="w-14 h-14 sm:w-20 sm:h-20 mx-auto">
                         <AvatarImage src={participant.avatar_url || ""} />
@@ -821,7 +849,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
                   </div>
                 )}
                 <div className="absolute bottom-2 left-2 right-2">
-                  <span className="text-xs font-medium text-accent bg-black/60 px-2 py-0.5 rounded-full">
+                  <span className="text-xs font-medium text-accent-foreground bg-accent/80 px-2 py-0.5 rounded-full">
                     {participant.full_name || "Participant"}
                   </span>
                 </div>
@@ -833,7 +861,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
       {/* Participants panel (slide up on mobile) */}
       {showParticipants && (
-        <div className="absolute bottom-20 left-0 right-0 bg-[hsl(220,25%,12%)] rounded-t-2xl p-4 max-h-[40vh] overflow-y-auto animate-in slide-in-from-bottom z-10">
+        <div className="absolute bottom-20 left-0 right-0 bg-card rounded-t-2xl p-4 max-h-[40vh] overflow-y-auto animate-in slide-in-from-bottom z-10 shadow-lg border-t border-border">
           <div className="text-center mb-3">
             <span className="text-sm text-muted-foreground">{participants.length} in call</span>
           </div>
@@ -841,7 +869,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
             {participants.map((participant) => (
               <div 
                 key={participant.user_id}
-                className="flex items-center gap-3 p-2 rounded-lg bg-[hsl(220,25%,18%)]"
+                className="flex items-center gap-3 p-2 rounded-lg bg-muted"
               >
                 <Avatar className="w-9 h-9">
                   <AvatarImage src={participant.avatar_url || ""} />
@@ -854,7 +882,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
                   {participant.user_id === userId && " (You)"}
                 </span>
                 {remoteStreams.has(participant.user_id) && participant.user_id !== userId && (
-                  <span className="text-xs text-green-400">Connected</span>
+                  <span className="text-xs text-primary font-medium">Connected</span>
                 )}
               </div>
             ))}
@@ -862,22 +890,22 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         </div>
       )}
 
-      {/* Chat panel (slide up on mobile) */}
+      {/* Chat panel (slide up on mobile) - improved styling */}
       {showChat && (
-        <div className="absolute bottom-20 left-0 right-0 bg-[hsl(220,25%,12%)] rounded-t-2xl max-h-[50vh] flex flex-col animate-in slide-in-from-bottom z-10">
+        <div className="absolute bottom-20 left-0 right-0 bg-card rounded-t-2xl max-h-[50vh] flex flex-col animate-in slide-in-from-bottom z-10 shadow-lg border-t border-border">
           {/* Chat header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border/20">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50 rounded-t-2xl">
             <span className="text-sm font-medium text-foreground">In-call Chat</span>
             <button 
               onClick={() => setShowChat(false)}
-              className="p-1 text-muted-foreground hover:text-foreground rounded"
+              className="p-1 text-muted-foreground hover:text-foreground rounded hover:bg-muted"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
           
           {/* Messages list */}
-          <div className="flex-1 overflow-y-auto px-4 py-2 space-y-3 min-h-[150px] max-h-[250px]">
+          <div className="flex-1 overflow-y-auto px-4 py-2 space-y-3 min-h-[150px] max-h-[250px] bg-background/95">
             {messages.length === 0 ? (
               <div className="text-center text-muted-foreground text-sm py-4">
                 No messages yet. Say hi!
@@ -892,10 +920,10 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
                     <span className="text-xs text-muted-foreground mb-1">{msg.senderName}</span>
                   )}
                   <div 
-                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm ${
+                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm shadow-sm ${
                       msg.senderId === userId 
                         ? 'bg-primary text-primary-foreground rounded-br-md' 
-                        : 'bg-[hsl(220,25%,20%)] text-foreground rounded-bl-md'
+                        : 'bg-muted text-foreground rounded-bl-md'
                     }`}
                   >
                     {msg.text}
@@ -910,13 +938,13 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           </div>
           
           {/* Message input */}
-          <div className="p-3 border-t border-border/20 flex items-center gap-2">
+          <div className="p-3 border-t border-border bg-card flex items-center gap-2">
             <Input
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Type a message..."
-              className="flex-1 bg-[hsl(220,25%,18%)] border-0 text-foreground placeholder:text-muted-foreground text-sm"
+              className="flex-1 bg-muted border-border text-foreground placeholder:text-muted-foreground text-sm"
             />
             <button
               onClick={sendChatMessage}
@@ -930,13 +958,13 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       )}
 
       {/* Bottom control bar - WhatsApp style */}
-      <div className="bg-[hsl(220,25%,12%)] px-4 py-3 flex items-center justify-center gap-3 sm:gap-5 shrink-0 safe-area-bottom">
+      <div className="bg-card px-4 py-3 flex items-center justify-center gap-3 sm:gap-5 shrink-0 safe-area-bottom border-t border-border">
         <button
           onClick={toggleMute}
           className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
             isMuted 
               ? 'bg-destructive/20 text-destructive' 
-              : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
+              : 'bg-muted text-foreground hover:bg-muted/80'
           }`}
           title={isMuted ? "Unmute" : "Mute"}
         >
@@ -948,7 +976,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
             isVideoOff 
               ? 'bg-destructive/20 text-destructive' 
-              : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
+              : 'bg-muted text-foreground hover:bg-muted/80'
           }`}
           title={isVideoOff ? "Turn on camera" : "Turn off camera"}
         >
@@ -964,7 +992,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           className={`relative w-11 h-11 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
             showChat 
               ? 'bg-primary text-primary-foreground' 
-              : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
+              : 'bg-muted text-foreground hover:bg-muted/80'
           }`}
           title="Chat"
         >
@@ -982,7 +1010,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
             className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all ${
               isScreenSharing 
                 ? 'bg-primary text-primary-foreground' 
-                : 'bg-[hsl(220,25%,20%)] text-foreground hover:bg-[hsl(220,25%,25%)]'
+                : 'bg-muted text-foreground hover:bg-muted/80'
             }`}
             title={isScreenSharing ? "Stop sharing" : "Share screen"}
           >
