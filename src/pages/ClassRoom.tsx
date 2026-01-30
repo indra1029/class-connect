@@ -41,6 +41,13 @@ interface ClassData {
   invite_code: string;
 }
 
+interface ActiveCall {
+  id: string;
+  started_by: string;
+  starter_name: string;
+  participant_count: number;
+}
+
 const ClassRoom = () => {
   const { classId } = useParams();
   const navigate = useNavigate();
@@ -56,6 +63,7 @@ const ClassRoom = () => {
   const [showMembers, setShowMembers] = useState(false);
   const [showVideoCall, setShowVideoCall] = useState(false);
   const [joinCallSessionId, setJoinCallSessionId] = useState<string | null>(null);
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -108,6 +116,8 @@ const ClassRoom = () => {
       fetchMessages();
       subscribeToMessages();
       checkAdminStatus();
+      checkActiveCall();
+      subscribeToActiveCalls();
     }
   }, [user, classId]);
 
@@ -124,6 +134,101 @@ const ClassRoom = () => {
       setIsAdmin(data.role === "admin");
     } catch (error: any) {
       console.error("Error checking admin status:", error);
+    }
+  };
+
+  // Check for active video call in this class
+  const checkActiveCall = async () => {
+    try {
+      // Don't check if user is already in a call
+      if (showVideoCall) return;
+
+      const { data: session, error } = await supabase
+        .from("video_call_sessions")
+        .select("id, started_by")
+        .eq("class_id", classId)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (session && session.started_by !== user!.id) {
+        // Get starter's name
+        const { data: starterProfile } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", session.started_by)
+          .single();
+
+        // Count active participants (exclude stale ones)
+        const staleThreshold = new Date(Date.now() - 15000).toISOString();
+        const { count } = await supabase
+          .from("video_call_participants")
+          .select("*", { count: "exact", head: true })
+          .eq("session_id", session.id)
+          .eq("is_active", true)
+          .gte("last_seen_at", staleThreshold);
+
+        setActiveCall({
+          id: session.id,
+          started_by: session.started_by,
+          starter_name: starterProfile?.full_name || "Someone",
+          participant_count: count || 1,
+        });
+      } else {
+        setActiveCall(null);
+      }
+    } catch (error: any) {
+      console.error("Error checking active call:", error);
+    }
+  };
+
+  // Subscribe to video call session changes
+  const subscribeToActiveCalls = () => {
+    const channel = supabase
+      .channel(`video-sessions-${classId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "video_call_sessions",
+          filter: `class_id=eq.${classId}`,
+        },
+        () => {
+          // Re-check active call status when sessions change
+          if (!showVideoCall) {
+            checkActiveCall();
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "video_call_participants",
+        },
+        () => {
+          // Update participant count when participants change
+          if (!showVideoCall) {
+            checkActiveCall();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
+  // Handle joining active call
+  const handleJoinActiveCall = () => {
+    if (activeCall) {
+      setJoinCallSessionId(activeCall.id);
+      setShowVideoCall(true);
+      setActiveCall(null);
     }
   };
 
@@ -436,6 +541,42 @@ const ClassRoom = () => {
         </div>
       </header>
 
+      {/* Active Call Banner - Show when someone else started a call */}
+      {activeCall && !showVideoCall && (
+        <div className="bg-primary/10 border-b border-primary/20 px-3 py-2 animate-pulse">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-ping" />
+              <div className="w-2 h-2 bg-green-500 rounded-full absolute" />
+              <span className="text-xs sm:text-sm text-foreground truncate">
+                <span className="font-medium">{activeCall.starter_name}</span> started a video call
+                {activeCall.participant_count > 1 && (
+                  <span className="text-muted-foreground"> • {activeCall.participant_count} in call</span>
+                )}
+              </span>
+            </div>
+            <div className="flex gap-1 shrink-0">
+              <Button 
+                size="sm" 
+                onClick={handleJoinActiveCall}
+                className="h-7 px-3 text-xs bg-green-600 hover:bg-green-700 text-white"
+              >
+                <Video className="w-3 h-3 mr-1" />
+                Join
+              </Button>
+              <Button 
+                size="sm" 
+                variant="ghost"
+                onClick={() => setActiveCall(null)}
+                className="h-7 px-2 text-xs"
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 w-full px-2 sm:px-4 py-2 sm:py-4 flex flex-col sm:flex-row gap-2 sm:gap-4 overflow-x-hidden max-w-full">
         {showMembers && (
           <div className="w-full sm:w-72 shrink-0 order-first sm:order-none max-h-[35vh] sm:max-h-none overflow-auto">
@@ -615,7 +756,12 @@ const ClassRoom = () => {
           classId={classId!} 
           userId={user.id} 
           sessionIdOverride={joinCallSessionId ?? undefined}
-          onClose={() => setShowVideoCall(false)}
+          onClose={() => {
+            setShowVideoCall(false);
+            setJoinCallSessionId(null);
+            // Re-check for active calls after leaving
+            setTimeout(() => checkActiveCall(), 1000);
+          }}
         />
       )}
     </div>
