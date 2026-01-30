@@ -127,6 +127,35 @@ export const ClassMembers = ({ classId, user, isAdmin }: ClassMembersProps) => {
     if (toUserId === user.id) return;
 
     try {
+      // First check if a request already exists (in either direction)
+      const { data: existingRequest } = await supabase
+        .from("message_requests")
+        .select("id, status, from_user_id, to_user_id")
+        .or(`and(from_user_id.eq.${user.id},to_user_id.eq.${toUserId}),and(from_user_id.eq.${toUserId},to_user_id.eq.${user.id})`)
+        .maybeSingle();
+
+      if (existingRequest) {
+        if (existingRequest.status === "accepted") {
+          // Already connected - navigate directly to chat
+          toast({
+            title: "Already Connected",
+            description: "Opening chat...",
+          });
+          navigate(`/chat/${toUserId}`);
+          return;
+        } else if (existingRequest.status === "pending") {
+          toast({
+            title: "Request Pending",
+            description: existingRequest.to_user_id === user.id 
+              ? "Check your Messages to accept this request" 
+              : "Waiting for them to accept your request",
+          });
+          return;
+        } else {
+          // Rejected - allow new request
+        }
+      }
+
       const { error } = await supabase
         .from("message_requests")
         .insert({
@@ -136,17 +165,29 @@ export const ClassMembers = ({ classId, user, isAdmin }: ClassMembersProps) => {
 
       if (error) {
         if (error.code === "23505") {
-          toast({
-            title: "Info",
-            description: "Request already exists",
-          });
+          // Duplicate key - check status and navigate if accepted
+          const { data: checkRequest } = await supabase
+            .from("message_requests")
+            .select("status")
+            .or(`and(from_user_id.eq.${user.id},to_user_id.eq.${toUserId}),and(from_user_id.eq.${toUserId},to_user_id.eq.${user.id})`)
+            .eq("status", "accepted")
+            .maybeSingle();
+
+          if (checkRequest) {
+            navigate(`/chat/${toUserId}`);
+          } else {
+            toast({
+              title: "Info",
+              description: "Request already sent. Check your Messages.",
+            });
+          }
         } else {
           throw error;
         }
       } else {
         toast({
           title: "Success",
-          description: "Request sent",
+          description: "Request sent!",
         });
       }
     } catch (error: any) {

@@ -216,9 +216,12 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
     pc.ontrack = (event) => {
       const [stream] = event.streams;
       if (!stream) return;
+      console.log("CR: Received track from", peerId, "kind:", event.track.kind);
       remoteStreams.current.set(peerId, stream);
       const el = remoteVideoRefs.current.get(peerId);
       if (el) el.srcObject = stream;
+      // Force re-render to show the stream
+      setParticipants(prev => [...prev]);
     };
 
     pc.onicecandidate = (event) => {
@@ -234,10 +237,31 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
       });
     };
 
+    // ICE connection state handling
+    pc.oniceconnectionstatechange = () => {
+      const state = pc.iceConnectionState;
+      console.log(`CR ICE state with ${peerId}:`, state);
+      if (state === "failed") {
+        console.log("CR ICE failed, attempting restart for:", peerId);
+        pc.restartIce();
+      }
+    };
+
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
-      if (state === "failed" || state === "disconnected") {
+      console.log(`CR connection state with ${peerId}:`, state);
+      if (state === "failed") {
         remoteStreams.current.delete(peerId);
+        // Retry connection after a short delay
+        setTimeout(() => {
+          const shouldCreateOffer = user.id < peerId;
+          if (shouldCreateOffer && localStreamRef.current) {
+            createOffer(peerId);
+          }
+        }, 2000);
+      } else if (state === "disconnected") {
+        // Wait for potential auto-reconnection
+        console.log("CR: Connection disconnected with:", peerId);
       }
     };
 
