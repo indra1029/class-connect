@@ -247,6 +247,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
     const existing = peerConnections.current.get(peerId);
     if (existing) {
       existing.connection.close();
+      peerConnections.current.delete(peerId);
     }
 
     const pc = new RTCPeerConnection(iceServers);
@@ -260,7 +261,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
     // Handle remote stream
     pc.ontrack = (event) => {
-      console.log("Received remote track from:", peerId);
+      console.log("Received remote track from:", peerId, "kind:", event.track.kind);
       const [stream] = event.streams;
       if (stream) {
         setRemoteStreams(prev => {
@@ -292,15 +293,37 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       }
     };
 
+    // ICE connection state for debugging
+    pc.oniceconnectionstatechange = () => {
+      console.log(`ICE state with ${peerId}:`, pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        // Attempt ICE restart
+        console.log("ICE failed, attempting restart for:", peerId);
+        pc.restartIce();
+      }
+    };
+
     pc.onconnectionstatechange = () => {
       console.log(`Connection state with ${peerId}:`, pc.connectionState);
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        // Clean up failed connection
+      if (pc.connectionState === 'failed') {
+        // Clean up and attempt reconnection
+        console.log("Connection failed with:", peerId, "- will retry");
         setRemoteStreams(prev => {
           const updated = new Map(prev);
           updated.delete(peerId);
           return updated;
         });
+        
+        // Retry connection after a short delay
+        setTimeout(() => {
+          const shouldCreateOffer = userId < peerId;
+          if (shouldCreateOffer && localStream.current) {
+            createOffer(peerId);
+          }
+        }, 2000);
+      } else if (pc.connectionState === 'disconnected') {
+        // Just wait, might reconnect automatically
+        console.log("Connection disconnected with:", peerId, "- waiting for reconnection");
       }
     };
 
@@ -436,10 +459,19 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
   const joinSession = async (sessionId: string) => {
     try {
-      // Get user media
+      // Get user media with better audio settings
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: "user"
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 48000
+        },
       });
       
       localStream.current = stream;
