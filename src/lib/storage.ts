@@ -20,40 +20,35 @@ export const getSignedFileUrl = async (
   
   // Extract the file path from various URL formats
   let filePath = fileUrlOrPath;
-  
-  // Handle full Supabase public URLs (legacy format)
+  let bucket = 'class-files';
+
   if (fileUrlOrPath.includes('/storage/v1/object/public/class-files/')) {
     filePath = fileUrlOrPath.split('/storage/v1/object/public/class-files/')[1];
-  }
-  // Handle Supabase storage path format
-  else if (fileUrlOrPath.startsWith('class-files/')) {
+    bucket = 'class-files';
+  } else if (fileUrlOrPath.includes('/storage/v1/object/public/private-messages/')) {
+    filePath = fileUrlOrPath.split('/storage/v1/object/public/private-messages/')[1];
+    bucket = 'private-messages';
+  } else if (fileUrlOrPath.startsWith('class-files/')) {
     filePath = fileUrlOrPath.replace('class-files/', '');
-  }
-  // If it's already a signed URL (contains token parameter), return as-is
-  else if (fileUrlOrPath.includes('/storage/v1/object/sign/') || fileUrlOrPath.includes('token=')) {
+    bucket = 'class-files';
+  } else if (fileUrlOrPath.startsWith('private-messages/')) {
+    filePath = fileUrlOrPath.replace('private-messages/', '');
+    bucket = 'private-messages';
+  } else if (fileUrlOrPath.includes('/storage/v1/object/sign/') || fileUrlOrPath.includes('token=')) {
+    return fileUrlOrPath;
+  } else if ((fileUrlOrPath.startsWith('http://') || fileUrlOrPath.startsWith('https://')) && !fileUrlOrPath.includes(supabaseUrl)) {
+    return fileUrlOrPath;
+  } else if (fileUrlOrPath.startsWith('data:')) {
+    return fileUrlOrPath;
+  } else if (fileUrlOrPath.startsWith('blob:')) {
     return fileUrlOrPath;
   }
-  // Handle external URLs (http/https that are not from our Supabase)
-  else if ((fileUrlOrPath.startsWith('http://') || fileUrlOrPath.startsWith('https://')) && !fileUrlOrPath.includes(supabaseUrl)) {
-    return fileUrlOrPath;
-  }
-  // Handle data URLs
-  else if (fileUrlOrPath.startsWith('data:')) {
-    return fileUrlOrPath;
-  }
-  // Handle blob URLs
-  else if (fileUrlOrPath.startsWith('blob:')) {
-    return fileUrlOrPath;
-  }
-  // For relative paths that look like storage paths (e.g., "classId/filename.png"),
-  // we assume they are storage paths and try to create a signed URL
-  
-  // Decode the path in case it was URL encoded
+
   filePath = decodeURIComponent(filePath);
-  
+
   try {
     const { data, error } = await supabase.storage
-      .from('class-files')
+      .from(bucket)
       .createSignedUrl(filePath, expiresInSeconds);
     
     if (error) {
