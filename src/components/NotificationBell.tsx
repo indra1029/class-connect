@@ -69,31 +69,53 @@ const NotificationBell = ({ userId }: { userId: string }) => {
     };
   }, [userId]);
 
-  // Check which video call sessions are still active
   useEffect(() => {
     const checkActiveSessions = async () => {
       const videoNotifs = notifications.filter(n => n.type === "video_call" && n.link);
-      const sessionIds = videoNotifs.map(n => {
-        const url = new URL(n.link!, window.location.origin);
-        return url.searchParams.get("joinCall");
-      }).filter(Boolean) as string[];
+      const sessionIds = videoNotifs
+        .map(n => {
+          const url = new URL(n.link!, window.location.origin);
+          return url.searchParams.get("joinCall");
+        })
+        .filter(Boolean) as string[];
 
       if (sessionIds.length === 0) {
         setActiveCallSessions(new Set());
         return;
       }
 
-      const { data } = await supabase
+      const { data: sessions } = await supabase
         .from("video_call_sessions")
         .select("id")
         .in("id", sessionIds)
         .eq("is_active", true);
 
-      setActiveCallSessions(new Set(data?.map(s => s.id) || []));
+      const activeSet = new Set<string>();
+      const staleThreshold = new Date(Date.now() - 15000).toISOString();
+
+      for (const session of sessions || []) {
+        const { count } = await supabase
+          .from("video_call_participants")
+          .select("id", { count: "exact", head: true })
+          .eq("session_id", session.id)
+          .eq("is_active", true)
+          .gte("last_seen_at", staleThreshold);
+
+        if ((count ?? 0) > 0) {
+          activeSet.add(session.id);
+        } else {
+          await supabase
+            .from("video_call_sessions")
+            .update({ is_active: false, ended_at: new Date().toISOString() })
+            .eq("id", session.id)
+            .eq("is_active", true);
+        }
+      }
+
+      setActiveCallSessions(activeSet);
     };
 
     checkActiveSessions();
-    // Re-check every 30 seconds
     const interval = setInterval(checkActiveSessions, 30000);
     return () => clearInterval(interval);
   }, [notifications]);

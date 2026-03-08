@@ -49,11 +49,15 @@ const Messages = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (user) {
-      fetchRequests();
-      fetchContacts();
-      subscribeToRequests();
-    }
+    if (!user) return;
+
+    fetchRequests();
+    fetchContacts();
+    const unsubscribe = subscribeToRequests();
+
+    return () => {
+      unsubscribe?.();
+    };
   }, [user]);
 
   const fetchRequests = async () => {

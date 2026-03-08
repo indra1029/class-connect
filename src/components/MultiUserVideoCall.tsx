@@ -37,6 +37,8 @@ interface ChatMessage {
 }
 
 
+const STALE_PARTICIPANT_WINDOW_MS = 15000;
+
 const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: MultiUserVideoCallProps) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -401,65 +403,117 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
     }
   };
 
+  const getAliveParticipantCount = async (targetSessionId: string): Promise<number> => {
+    const staleThreshold = new Date(Date.now() - STALE_PARTICIPANT_WINDOW_MS).toISOString();
+
+    const { count, error } = await supabase
+      .from("video_call_participants")
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", targetSessionId)
+      .eq("is_active", true)
+      .gte("last_seen_at", staleThreshold);
+
+    if (error) throw error;
+    return count ?? 0;
+  };
+
+  const markSessionInactive = async (targetSessionId: string) => {
+    await supabase
+      .from("video_call_sessions")
+      .update({ is_active: false, ended_at: new Date().toISOString() })
+      .eq("id", targetSessionId)
+      .eq("is_active", true);
+  };
+
   const initializeCall = async () => {
     try {
-      // Get class name for notifications
       const { data: classData } = await supabase
         .from("classes")
         .select("name")
         .eq("id", classId)
         .single();
-      
+
       if (classData) {
         setClassName(classData.name);
       }
 
-      // If user is joining from notification, join that exact session
       if (sessionIdOverride) {
+        const { data: requestedSession } = await supabase
+          .from("video_call_sessions")
+          .select("id, is_active")
+          .eq("id", sessionIdOverride)
+          .eq("class_id", classId)
+          .maybeSingle();
+
+        if (!requestedSession?.is_active) {
+          toast.error("That call has already ended");
+          onClose();
+          return;
+        }
+
+        const aliveCount = await getAliveParticipantCount(sessionIdOverride);
+        if (aliveCount === 0) {
+          await markSessionInactive(sessionIdOverride);
+          toast.error("That call has ended");
+          onClose();
+          return;
+        }
+
         setSessionId(sessionIdOverride);
         await joinSession(sessionIdOverride);
         return;
       }
 
-      // Check if there's an active session
-      const { data: activeSession } = await supabase
+      const { data: activeSessions, error: activeSessionsError } = await supabase
         .from("video_call_sessions")
         .select("id")
         .eq("class_id", classId)
         .eq("is_active", true)
+        .order("started_at", { ascending: false })
+        .limit(10);
+
+      if (activeSessionsError) throw activeSessionsError;
+
+      let joinableSessionId: string | null = null;
+
+      for (const session of activeSessions || []) {
+        const aliveCount = await getAliveParticipantCount(session.id);
+
+        if (aliveCount > 0) {
+          joinableSessionId = session.id;
+          break;
+        }
+
+        await markSessionInactive(session.id);
+      }
+
+      if (joinableSessionId) {
+        setSessionId(joinableSessionId);
+        await joinSession(joinableSessionId);
+        return;
+      }
+
+      const { data: newSession, error } = await supabase
+        .from("video_call_sessions")
+        .insert({
+          class_id: classId,
+          started_by: userId,
+          is_active: true,
+        })
+        .select()
         .single();
 
-      if (activeSession) {
-        // Join existing session
-        setSessionId(activeSession.id);
-        await joinSession(activeSession.id);
-      } else {
-        // Create new session
-        const { data: newSession, error } = await supabase
-          .from("video_call_sessions")
-          .insert({
-            class_id: classId,
-            started_by: userId,
-            is_active: true,
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        setSessionId(newSession.id);
-        await joinSession(newSession.id);
-        
-        // Notification is now handled automatically by database trigger
-        // which includes the correct joinCall session ID in the link
-      }
+      if (error) throw error;
+      setSessionId(newSession.id);
+      await joinSession(newSession.id);
     } catch (error: any) {
       toast.error("Failed to initialize call: " + error.message);
+      onClose();
     }
   };
 
   const joinSession = async (sessionId: string) => {
     try {
-      // Get user media with better audio settings
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
@@ -473,28 +527,27 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           sampleRate: 48000
         },
       });
-      
+
       localStream.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
 
-      // Check if participant already exists
-      const { data: existingParticipant } = await supabase
+      const { data: existingParticipants, error: participantFetchError } = await supabase
         .from("video_call_participants")
         .select("id")
         .eq("session_id", sessionId)
-        .eq("user_id", userId)
-        .single();
+        .eq("user_id", userId);
 
-      if (existingParticipant) {
-        // Update existing participant to active
+      if (participantFetchError) throw participantFetchError;
+
+      if (existingParticipants && existingParticipants.length > 0) {
+        const existingIds = existingParticipants.map((p) => p.id);
         await supabase
           .from("video_call_participants")
           .update({ is_active: true, joined_at: new Date().toISOString(), left_at: null })
-          .eq("id", existingParticipant.id);
+          .in("id", existingIds);
       } else {
-        // Add user as new participant
         await supabase
           .from("video_call_participants")
           .insert({
@@ -507,6 +560,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       toast.success("Joined video call");
     } catch (error: any) {
       toast.error("Failed to join call: " + error.message);
+      onClose();
     }
   };
 
@@ -712,15 +766,15 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           .eq("session_id", sessionId)
           .eq("user_id", userId);
 
-        // Check if this was the last participant
-        const { data: activeParticipants } = await supabase
+        const staleThreshold = new Date(Date.now() - STALE_PARTICIPANT_WINDOW_MS).toISOString();
+        const { count: aliveParticipantsCount } = await supabase
           .from("video_call_participants")
-          .select("user_id")
+          .select("id", { count: "exact", head: true })
           .eq("session_id", sessionId)
-          .eq("is_active", true);
+          .eq("is_active", true)
+          .gte("last_seen_at", staleThreshold);
 
-        if (!activeParticipants || activeParticipants.length === 0) {
-          // End the session
+        if (!aliveParticipantsCount || aliveParticipantsCount === 0) {
           await supabase
             .from("video_call_sessions")
             .update({ is_active: false, ended_at: new Date().toISOString() })

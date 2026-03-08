@@ -33,7 +33,11 @@ export const ClassMembers = ({ classId, user, isAdmin }: ClassMembersProps) => {
 
   useEffect(() => {
     fetchMembers();
-    subscribeToMembers();
+    const unsubscribe = subscribeToMembers();
+
+    return () => {
+      unsubscribe?.();
+    };
   }, [classId]);
 
   const fetchMembers = async () => {

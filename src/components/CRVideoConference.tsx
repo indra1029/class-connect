@@ -431,6 +431,20 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
     }
   };
 
+  const replaceOutgoingVideoTrack = async (nextTrack: MediaStreamTrack | null) => {
+    if (!nextTrack) return;
+
+    const replacePromises: Promise<void>[] = [];
+    peerConnections.current.forEach((pc) => {
+      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+      if (sender) {
+        replacePromises.push(sender.replaceTrack(nextTrack));
+      }
+    });
+
+    await Promise.allSettled(replacePromises);
+  };
+
   const toggleScreenShare = async () => {
     if (isMobile) {
       toast({
@@ -451,18 +465,21 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
 
     try {
       if (!isScreenSharing) {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        const nextScreenStream = await navigator.mediaDevices.getDisplayMedia({
           video: true,
           audio: false,
         });
 
-        screenStreamRef.current = screenStream;
+        screenStreamRef.current = nextScreenStream;
+        const screenTrack = nextScreenStream.getVideoTracks()[0];
+        await replaceOutgoingVideoTrack(screenTrack);
+
         if (localVideoRef.current) {
-          localVideoRef.current.srcObject = screenStream;
+          localVideoRef.current.srcObject = nextScreenStream;
         }
 
-        screenStream.getVideoTracks()[0].onended = () => {
-          stopScreenShare();
+        screenTrack.onended = () => {
+          void stopScreenShare();
         };
 
         setIsScreenSharing(true);
@@ -471,11 +488,11 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
           description: "Your screen is now being shared",
         });
       } else {
-        stopScreenShare();
+        await stopScreenShare();
       }
     } catch (error: any) {
       console.error("Screen share error:", error);
-      if (error.name === 'NotAllowedError') {
+      if (error.name === "NotAllowedError") {
         toast({
           variant: "destructive",
           title: "Cancelled",
@@ -491,14 +508,19 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
     }
   };
 
-  const stopScreenShare = () => {
+  const stopScreenShare = async () => {
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach((track) => track.stop());
       screenStreamRef.current = null;
     }
+
+    const cameraTrack = localStreamRef.current?.getVideoTracks()[0] || null;
+    await replaceOutgoingVideoTrack(cameraTrack);
+
     if (localVideoRef.current && localStreamRef.current) {
       localVideoRef.current.srcObject = localStreamRef.current;
     }
+
     setIsScreenSharing(false);
   };
 
@@ -509,6 +531,22 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
         .update({ is_active: false, left_at: new Date().toISOString() })
         .eq("session_id", sessionId)
         .eq("user_id", user.id);
+
+      const staleThreshold = new Date(Date.now() - 15000).toISOString();
+      const { count: aliveParticipantsCount } = await supabase
+        .from("cr_video_participants")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", sessionId)
+        .eq("is_active", true)
+        .gte("last_seen_at", staleThreshold);
+
+      if (!aliveParticipantsCount || aliveParticipantsCount === 0) {
+        await supabase
+          .from("cr_video_sessions")
+          .update({ is_active: false, ended_at: new Date().toISOString() })
+          .eq("id", sessionId)
+          .eq("is_active", true);
+      }
 
       cleanup();
       onClose();

@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Send, Paperclip } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { z } from "zod";
+import { SecureFileLink } from "@/components/SecureFileLink";
 
 interface PrivateMessage {
   id: string;
@@ -46,11 +47,15 @@ const PrivateChat = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (user && userId) {
-      fetchContactProfile();
-      fetchMessages();
-      subscribeToMessages();
-    }
+    if (!user || !userId) return;
+
+    fetchContactProfile();
+    fetchMessages();
+    const unsubscribe = subscribeToMessages();
+
+    return () => {
+      unsubscribe?.();
+    };
   }, [user, userId]);
 
   useEffect(() => {
@@ -189,15 +194,13 @@ const PrivateChat = () => {
       });
 
       const fileExt = file.name.split(".").pop();
-      const fileName = `${user!.id}/${Math.random()}.${fileExt}`;
+      const storagePath = `${user!.id}/${Math.random()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from("private-messages")
-        .upload(fileName, file);
+        .upload(storagePath, file);
 
       if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage.from("private-messages").getPublicUrl(fileName);
 
       const { error } = await supabase
         .from("private_messages")
@@ -205,7 +208,7 @@ const PrivateChat = () => {
           from_user_id: user!.id,
           to_user_id: userId!,
           content: file.name,
-          file_url: data.publicUrl,
+          file_url: `private-messages/${storagePath}`,
         });
 
       if (error) throw error;
@@ -276,14 +279,11 @@ const PrivateChat = () => {
                       }`}
                     >
                       {message.file_url ? (
-                        <a
-                          href={message.file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline"
-                        >
-                          📎 {message.content}
-                        </a>
+                        <SecureFileLink
+                          fileUrl={message.file_url}
+                          fileName={message.content}
+                          className="p-2 bg-transparent border-0 hover:bg-transparent"
+                        />
                       ) : (
                         <p className="text-sm break-words">{message.content}</p>
                       )}
