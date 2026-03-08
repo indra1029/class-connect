@@ -143,49 +143,65 @@ const ClassRoom = () => {
     }
   };
 
-  // Check for active video call in this class
   const checkActiveCall = async () => {
     try {
-      // Don't check if user is already in a call
-      if (showVideoCall) return;
+      if (showVideoCall || !classId) return;
 
-      const { data: session, error } = await supabase
+      const { data: sessions, error } = await supabase
         .from("video_call_sessions")
-        .select("id, started_by")
+        .select("id, started_by, started_at")
         .eq("class_id", classId)
         .eq("is_active", true)
-        .maybeSingle();
+        .order("started_at", { ascending: false })
+        .limit(10);
 
       if (error) throw error;
 
-      if (session && session.started_by !== user!.id) {
-        // Get starter's name
-        const { data: starterProfile } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", session.started_by)
-          .single();
+      if (!sessions || sessions.length === 0) {
+        setActiveCall(null);
+        return;
+      }
 
-        // Count active participants (exclude stale ones)
-        const staleThreshold = new Date(Date.now() - 15000).toISOString();
+      const staleThreshold = new Date(Date.now() - 15000).toISOString();
+      let nextActiveCall: ActiveCall | null = null;
+
+      for (const session of sessions) {
         const { count } = await supabase
           .from("video_call_participants")
-          .select("*", { count: "exact", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("session_id", session.id)
           .eq("is_active", true)
           .gte("last_seen_at", staleThreshold);
 
-        setActiveCall({
-          id: session.id,
-          started_by: session.started_by,
-          starter_name: starterProfile?.full_name || "Someone",
-          participant_count: count || 1,
-        });
-      } else {
-        setActiveCall(null);
+        if ((count ?? 0) > 0) {
+          if (session.started_by === user!.id) break;
+
+          const { data: starterProfile } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", session.started_by)
+            .maybeSingle();
+
+          nextActiveCall = {
+            id: session.id,
+            started_by: session.started_by,
+            starter_name: starterProfile?.full_name || "Someone",
+            participant_count: count ?? 1,
+          };
+          break;
+        }
+
+        await supabase
+          .from("video_call_sessions")
+          .update({ is_active: false, ended_at: new Date().toISOString() })
+          .eq("id", session.id)
+          .eq("is_active", true);
       }
+
+      setActiveCall(nextActiveCall);
     } catch (error: any) {
       console.error("Error checking active call:", error);
+      setActiveCall(null);
     }
   };
 
