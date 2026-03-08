@@ -46,11 +46,15 @@ const PrivateChat = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (user && userId) {
-      fetchContactProfile();
-      fetchMessages();
-      subscribeToMessages();
-    }
+    if (!user || !userId) return;
+
+    fetchContactProfile();
+    fetchMessages();
+    const unsubscribe = subscribeToMessages();
+
+    return () => {
+      unsubscribe?.();
+    };
   }, [user, userId]);
 
   useEffect(() => {
