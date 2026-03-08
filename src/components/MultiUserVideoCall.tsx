@@ -766,15 +766,15 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           .eq("session_id", sessionId)
           .eq("user_id", userId);
 
-        // Check if this was the last participant
-        const { data: activeParticipants } = await supabase
+        const staleThreshold = new Date(Date.now() - STALE_PARTICIPANT_WINDOW_MS).toISOString();
+        const { count: aliveParticipantsCount } = await supabase
           .from("video_call_participants")
-          .select("user_id")
+          .select("id", { count: "exact", head: true })
           .eq("session_id", sessionId)
-          .eq("is_active", true);
+          .eq("is_active", true)
+          .gte("last_seen_at", staleThreshold);
 
-        if (!activeParticipants || activeParticipants.length === 0) {
-          // End the session
+        if (!aliveParticipantsCount || aliveParticipantsCount === 0) {
           await supabase
             .from("video_call_sessions")
             .update({ is_active: false, ended_at: new Date().toISOString() })
