@@ -49,13 +49,16 @@ const CRGroupChat = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (user) {
-      fetchUserCollege();
-      fetchCRMembers();
-      fetchMessages();
-      subscribeToMessages();
-      checkActiveVideoSession();
-    }
+    if (!user) return;
+
+    fetchUserCollege();
+    fetchCRMembers();
+    fetchMessages();
+
+    const unsubscribe = subscribeToMessages();
+    return () => {
+      unsubscribe?.();
+    };
   }, [user]);
 
   const fetchUserCollege = async () => {
@@ -65,28 +68,59 @@ const CRGroupChat = () => {
         .select("verified_college")
         .eq("id", user!.id)
         .single();
-      
-      setUserCollege(data?.verified_college || null);
+
+      const verifiedCollege = data?.verified_college || null;
+      setUserCollege(verifiedCollege);
+      await checkActiveVideoSession(verifiedCollege);
     } catch (error) {
       console.error("Error fetching user college:", error);
     }
   };
 
-  const checkActiveVideoSession = async () => {
+  const checkActiveVideoSession = async (collegeOverride?: string | null) => {
     try {
-      const { data } = await supabase
+      const verifiedCollege = collegeOverride ?? userCollege;
+      if (!verifiedCollege) {
+        setActiveVideoSession(null);
+        return;
+      }
+
+      const staleThreshold = new Date(Date.now() - 15000).toISOString();
+
+      const { data: sessions } = await supabase
         .from("cr_video_sessions")
         .select("id")
+        .eq("college", verifiedCollege)
         .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (data) {
-        setActiveVideoSession(data.id);
+        .order("started_at", { ascending: false })
+        .limit(10);
+
+      let activeSessionId: string | null = null;
+
+      for (const session of sessions || []) {
+        const { count } = await supabase
+          .from("cr_video_participants")
+          .select("id", { count: "exact", head: true })
+          .eq("session_id", session.id)
+          .eq("is_active", true)
+          .gte("last_seen_at", staleThreshold);
+
+        if ((count ?? 0) > 0) {
+          activeSessionId = session.id;
+          break;
+        }
+
+        await supabase
+          .from("cr_video_sessions")
+          .update({ is_active: false, ended_at: new Date().toISOString() })
+          .eq("id", session.id)
+          .eq("is_active", true);
       }
+
+      setActiveVideoSession(activeSessionId);
     } catch (error) {
       console.error("Error checking video session:", error);
+      setActiveVideoSession(null);
     }
   };
 
