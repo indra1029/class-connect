@@ -111,15 +111,21 @@ const ClassRoom = () => {
   }, [searchParams, user, classId]);
 
   useEffect(() => {
-    if (user && classId) {
-      fetchClassData();
-      fetchMessages();
-      subscribeToMessages();
-      checkAdminStatus();
-      checkActiveCall();
-      subscribeToActiveCalls();
-    }
-  }, [user, classId]);
+    if (!user || !classId) return;
+
+    fetchClassData();
+    fetchMessages();
+    checkAdminStatus();
+    checkActiveCall();
+
+    const unsubscribeMessages = subscribeToMessages();
+    const unsubscribeActiveCalls = subscribeToActiveCalls();
+
+    return () => {
+      unsubscribeMessages?.();
+      unsubscribeActiveCalls?.();
+    };
+  }, [user, classId, showVideoCall]);
 
   const checkAdminStatus = async () => {
     try {
