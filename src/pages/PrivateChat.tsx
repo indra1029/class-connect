@@ -194,11 +194,11 @@ const PrivateChat = () => {
       });
 
       const fileExt = file.name.split(".").pop();
-      const fileName = `${user!.id}/${Math.random()}.${fileExt}`;
+      const storagePath = `${user!.id}/${Math.random()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from("private-messages")
-        .upload(fileName, file);
+        .upload(storagePath, file);
 
       if (uploadError) throw uploadError;
 
@@ -208,7 +208,7 @@ const PrivateChat = () => {
           from_user_id: user!.id,
           to_user_id: userId!,
           content: file.name,
-          file_url: fileName,
+          file_url: `private-messages/${storagePath}`,
         });
 
       if (error) throw error;
