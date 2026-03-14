@@ -567,9 +567,9 @@ const ClassRoom = () => {
       {activeCall && !showVideoCall && (
         <div className="bg-primary/10 border-b border-primary/20 px-3 py-2 animate-pulse">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 relative">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-ping" />
-              <div className="w-2 h-2 bg-green-500 rounded-full absolute" />
+              <div className="w-2 h-2 bg-green-500 rounded-full absolute left-0" />
               <span className="text-xs sm:text-sm text-foreground truncate">
                 <span className="font-medium">{activeCall.starter_name}</span> started a video call
                 {activeCall.participant_count > 1 && (
