@@ -677,17 +677,11 @@ const ClassRoom = () => {
                               }`}
                             >
                               {message.file_url ? (
-                                <a
-                                  href={message.file_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="underline flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm"
-                                >
-                                  <Paperclip className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                  <span className="truncate max-w-[150px] sm:max-w-none">
-                                    {message.file_name || message.content}
-                                  </span>
-                                </a>
+                                <SecureFileLink
+                                  fileUrl={message.file_url}
+                                  fileName={message.file_name || message.content}
+                                  className="p-2 bg-transparent border-0 hover:bg-transparent"
+                                />
                               ) : (
                                 <p className="text-xs sm:text-sm break-words">{message.content}</p>
                               )}
