@@ -126,7 +126,7 @@ const ClassRoom = () => {
       unsubscribeMessages?.();
       unsubscribeActiveCalls?.();
     };
-  }, [user, classId, showVideoCall]);
+  }, [user, classId]);
 
   const checkAdminStatus = async () => {
     try {

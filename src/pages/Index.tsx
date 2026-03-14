@@ -110,7 +110,7 @@ const Index = () => {
 
       <footer className="border-t mt-10 sm:mt-20">
         <div className="container mx-auto px-4 py-4 sm:py-6 text-center text-xs sm:text-sm text-muted-foreground">
-          © 2024 ClassChat. Built for students.
+          © {new Date().getFullYear()} ClassChat. Built for students.
         </div>
       </footer>
     </div>
