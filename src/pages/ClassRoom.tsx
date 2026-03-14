@@ -12,6 +12,7 @@ import { ClassMembers } from "@/components/ClassMembers";
 import VideoCall from "@/components/VideoCall";
 import MultiUserVideoCall from "@/components/MultiUserVideoCall";
 import EmojiPicker from "@/components/EmojiPicker";
+import { SecureFileLink } from "@/components/SecureFileLink";
 import { Announcements } from "@/components/Announcements";
 import { PresentationViewer } from "@/components/PresentationViewer";
 import { Polls } from "@/components/Polls";
