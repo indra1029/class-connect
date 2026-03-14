@@ -11,7 +11,6 @@ import { iceServers, isScreenShareSupported } from "@/lib/webrtc";
 interface MultiUserVideoCallProps {
   classId: string;
   userId: string;
-  /** If provided, join this exact session (used when user clicks "Join" from notification). */
   sessionIdOverride?: string;
   onClose: () => void;
 }
@@ -35,7 +34,6 @@ interface ChatMessage {
   text: string;
   timestamp: Date;
 }
-
 
 const STALE_PARTICIPANT_WINDOW_MS = 15000;
 
@@ -69,11 +67,14 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
   const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const participantUnsubRef = useRef<null | (() => void)>(null);
   const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track whether local media is ready before signaling
+  const mediaReadyRef = useRef(false);
+  const showChatRef = useRef(showChat);
+  showChatRef.current = showChat;
 
   useEffect(() => {
     initializeCall();
     
-    // Start duration timer
     callStartTime.current = Date.now();
     durationInterval.current = setInterval(() => {
       const elapsed = Math.floor((Date.now() - callStartTime.current) / 1000);
@@ -84,12 +85,8 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
     
     return () => {
       cleanup();
-      if (durationInterval.current) {
-        clearInterval(durationInterval.current);
-      }
-      if (heartbeatInterval.current) {
-        clearInterval(heartbeatInterval.current);
-      }
+      if (durationInterval.current) clearInterval(durationInterval.current);
+      if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
     };
   }, []);
 
@@ -106,7 +103,6 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
     };
   }, [sessionId]);
 
-  // Start heartbeat to mark this user as alive (prevents ghost participants)
   const startHeartbeat = () => {
     if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
     heartbeatInterval.current = setInterval(async () => {
@@ -117,32 +113,33 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           .eq("session_id", sessionId)
           .eq("user_id", userId);
       }
-    }, 5000); // every 5 seconds
+    }, 5000);
   };
 
-  // Auto-scroll chat to bottom when new messages arrive
   useEffect(() => {
     if (chatEndRef.current && showChat) {
       chatEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, showChat]);
 
-  // Reset unread count when chat is opened
   useEffect(() => {
-    if (showChat) {
-      setUnreadCount(0);
-    }
+    if (showChat) setUnreadCount(0);
   }, [showChat]);
 
-  // Set up WebRTC signaling via Supabase Realtime
   const setupSignaling = () => {
+    // Clean up previous channel
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
     const channel = supabase.channel(`webrtc-${classId}-${sessionId}`, {
       config: { broadcast: { self: false } }
     });
     
     channel
       .on("broadcast", { event: "offer" }, async ({ payload }) => {
-        if (payload.to === userId) {
+        if (payload.to === userId && mediaReadyRef.current) {
           await handleOffer(payload);
         }
       })
@@ -157,20 +154,15 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         }
       })
       .on("broadcast", { event: "user-joined" }, async ({ payload }) => {
-        if (payload.userId !== userId && localStream.current) {
-          // Use "polite" peer pattern - only the user with smaller ID creates the offer
-          // This prevents both sides from creating offers simultaneously
+        if (payload.userId !== userId && mediaReadyRef.current) {
           const shouldCreateOffer = userId < payload.userId;
           if (shouldCreateOffer) {
-            console.log("I am polite peer, creating offer to:", payload.userId);
-            await createOffer(payload.userId);
-          } else {
-            console.log("I am impolite peer, waiting for offer from:", payload.userId);
+            // Small delay to ensure the remote side is subscribed
+            setTimeout(() => createOffer(payload.userId), 500);
           }
         }
       })
       .on("broadcast", { event: "chat-message" }, ({ payload }) => {
-        // Add incoming message
         const msg: ChatMessage = {
           id: payload.id,
           senderId: payload.senderId,
@@ -179,28 +171,26 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           timestamp: new Date(payload.timestamp)
         };
         setMessages(prev => [...prev, msg]);
-        
-        // Increment unread count if chat is closed
-        if (!showChat) {
+        if (!showChatRef.current) {
           setUnreadCount(prev => prev + 1);
         }
       })
       .subscribe((status) => {
-        console.log("Signaling channel status:", status);
         if (status === 'SUBSCRIBED') {
-          // Broadcast that we've joined so other participants know to connect
-          channel.send({
-            type: "broadcast",
-            event: "user-joined",
-            payload: { userId }
-          });
+          // Delay the join broadcast slightly to ensure other clients have their listeners ready
+          setTimeout(() => {
+            channel.send({
+              type: "broadcast",
+              event: "user-joined",
+              payload: { userId }
+            });
+          }, 300);
         }
       });
 
     channelRef.current = channel;
   };
 
-  // Send chat message
   const sendChatMessage = () => {
     if (!newMessage.trim() || !channelRef.current) return;
     
@@ -214,10 +204,8 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       timestamp: new Date()
     };
     
-    // Add to local messages immediately
     setMessages(prev => [...prev, message]);
     
-    // Broadcast to others
     channelRef.current.send({
       type: "broadcast",
       event: "chat-message",
@@ -245,7 +233,6 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
   };
 
   const createPeerConnection = (peerId: string): RTCPeerConnection => {
-    // Close existing connection if any
     const existing = peerConnections.current.get(peerId);
     if (existing) {
       existing.connection.close();
@@ -254,16 +241,13 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
     const pc = new RTCPeerConnection(iceServers);
     
-    // Add local tracks
     if (localStream.current) {
       localStream.current.getTracks().forEach(track => {
         pc.addTrack(track, localStream.current!);
       });
     }
 
-    // Handle remote stream
     pc.ontrack = (event) => {
-      console.log("Received remote track from:", peerId, "kind:", event.track.kind);
       const [stream] = event.streams;
       if (stream) {
         setRemoteStreams(prev => {
@@ -272,15 +256,11 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           return updated;
         });
         
-        // Set video srcObject if ref exists
         const videoEl = remoteVideoRefs.current.get(peerId);
-        if (videoEl) {
-          videoEl.srcObject = stream;
-        }
+        if (videoEl) videoEl.srcObject = stream;
       }
     };
 
-    // Handle ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate && channelRef.current) {
         channelRef.current.send({
@@ -295,37 +275,30 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       }
     };
 
-    // ICE connection state for debugging
     pc.oniceconnectionstatechange = () => {
-      console.log(`ICE state with ${peerId}:`, pc.iceConnectionState);
-      if (pc.iceConnectionState === 'failed') {
-        // Attempt ICE restart
-        console.log("ICE failed, attempting restart for:", peerId);
+      const state = pc.iceConnectionState;
+      console.log(`ICE state with ${peerId}:`, state);
+      if (state === 'failed') {
         pc.restartIce();
       }
     };
 
     pc.onconnectionstatechange = () => {
-      console.log(`Connection state with ${peerId}:`, pc.connectionState);
-      if (pc.connectionState === 'failed') {
-        // Clean up and attempt reconnection
-        console.log("Connection failed with:", peerId, "- will retry");
+      const state = pc.connectionState;
+      console.log(`Connection state with ${peerId}:`, state);
+      if (state === 'failed') {
         setRemoteStreams(prev => {
           const updated = new Map(prev);
           updated.delete(peerId);
           return updated;
         });
         
-        // Retry connection after a short delay
+        // Retry with delay
         setTimeout(() => {
-          const shouldCreateOffer = userId < peerId;
-          if (shouldCreateOffer && localStream.current) {
+          if (userId < peerId && mediaReadyRef.current) {
             createOffer(peerId);
           }
         }, 2000);
-      } else if (pc.connectionState === 'disconnected') {
-        // Just wait, might reconnect automatically
-        console.log("Connection disconnected with:", peerId, "- waiting for reconnection");
       }
     };
 
@@ -335,6 +308,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
   const createOffer = async (peerId: string) => {
     try {
+      if (!mediaReadyRef.current) return;
       const pc = createPeerConnection(peerId);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -357,7 +331,6 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
   const handleOffer = async (payload: { offer: RTCSessionDescriptionInit; from: string }) => {
     try {
-      console.log("Received offer from:", payload.from);
       const pc = createPeerConnection(payload.from);
       await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
       
@@ -382,7 +355,6 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
   const handleAnswer = async (payload: { answer: RTCSessionDescriptionInit; from: string }) => {
     try {
-      console.log("Received answer from:", payload.from);
       const peerData = peerConnections.current.get(payload.from);
       if (peerData) {
         await peerData.connection.setRemoteDescription(new RTCSessionDescription(payload.answer));
@@ -433,8 +405,27 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         .eq("id", classId)
         .single();
 
-      if (classData) {
-        setClassName(classData.name);
+      if (classData) setClassName(classData.name);
+
+      // Get media FIRST before any signaling
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: "user"
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 48000
+        },
+      });
+
+      localStream.current = stream;
+      mediaReadyRef.current = true;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
       }
 
       if (sessionIdOverride) {
@@ -464,13 +455,14 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         return;
       }
 
+      // Look for an existing active session to join
       const { data: activeSessions, error: activeSessionsError } = await supabase
         .from("video_call_sessions")
         .select("id")
         .eq("class_id", classId)
         .eq("is_active", true)
         .order("started_at", { ascending: false })
-        .limit(10);
+        .limit(5);
 
       if (activeSessionsError) throw activeSessionsError;
 
@@ -493,6 +485,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         return;
       }
 
+      // Create new session
       const { data: newSession, error } = await supabase
         .from("video_call_sessions")
         .insert({
@@ -512,31 +505,12 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
     }
   };
 
-  const joinSession = async (sessionId: string) => {
+  const joinSession = async (sid: string) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: "user"
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 48000
-        },
-      });
-
-      localStream.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-
       const { data: existingParticipants, error: participantFetchError } = await supabase
         .from("video_call_participants")
         .select("id")
-        .eq("session_id", sessionId)
+        .eq("session_id", sid)
         .eq("user_id", userId);
 
       if (participantFetchError) throw participantFetchError;
@@ -545,13 +519,13 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         const existingIds = existingParticipants.map((p) => p.id);
         await supabase
           .from("video_call_participants")
-          .update({ is_active: true, joined_at: new Date().toISOString(), left_at: null })
+          .update({ is_active: true, joined_at: new Date().toISOString(), left_at: null, last_seen_at: new Date().toISOString() })
           .in("id", existingIds);
       } else {
         await supabase
           .from("video_call_participants")
           .insert({
-            session_id: sessionId,
+            session_id: sid,
             user_id: userId,
             is_active: true,
           });
@@ -578,12 +552,9 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         async (payload) => {
           await fetchParticipants();
           
-          // When a new participant joins via database, also trigger connection
-          if (payload.eventType === 'INSERT' && payload.new.user_id !== userId && localStream.current) {
-            // Use polite peer pattern here too
+          if (payload.eventType === 'INSERT' && payload.new.user_id !== userId && mediaReadyRef.current) {
             const shouldCreateOffer = userId < payload.new.user_id;
             if (shouldCreateOffer) {
-              console.log("New participant detected via DB, creating offer to:", payload.new.user_id);
               setTimeout(() => createOffer(payload.new.user_id), 1000);
             }
           }
@@ -600,8 +571,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
   const fetchParticipants = async () => {
     try {
-      // Compute 15-second threshold to filter stale participants
-      const staleThreshold = new Date(Date.now() - 15000).toISOString();
+      const staleThreshold = new Date(Date.now() - STALE_PARTICIPANT_WINDOW_MS).toISOString();
 
       const { data, error } = await supabase
         .from("video_call_participants")
@@ -612,7 +582,6 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
       if (error) throw error;
 
-      // Fetch user names and avatars
       const userIds = data?.map(p => p.user_id) || [];
       if (userIds.length === 0) {
         setParticipants([]);
@@ -634,15 +603,15 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
       setParticipants(participantsWithNames);
       
-      // Create offers for existing participants we don't have connections with
-      // Use polite peer pattern - only create offer if our ID is smaller
-      const otherParticipants = participantsWithNames.filter(p => p.user_id !== userId);
-      for (const participant of otherParticipants) {
-        if (!peerConnections.current.has(participant.user_id) && localStream.current) {
-          const shouldCreateOffer = userId < participant.user_id;
-          if (shouldCreateOffer) {
-            console.log("Creating offer to existing participant:", participant.user_id);
-            await createOffer(participant.user_id);
+      // Connect to participants we don't have connections with (polite peer pattern)
+      if (mediaReadyRef.current) {
+        const otherParticipants = participantsWithNames.filter(p => p.user_id !== userId);
+        for (const participant of otherParticipants) {
+          if (!peerConnections.current.has(participant.user_id)) {
+            const shouldCreateOffer = userId < participant.user_id;
+            if (shouldCreateOffer) {
+              await createOffer(participant.user_id);
+            }
           }
         }
       }
@@ -683,64 +652,45 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
 
     try {
       if (isScreenSharing) {
-        // Stop screen sharing
         if (screenStream.current) {
           screenStream.current.getTracks().forEach(track => track.stop());
           screenStream.current = null;
         }
         
-        // Resume camera and replace track in peer connections
         if (localStream.current) {
           const videoTrack = localStream.current.getVideoTracks()[0];
           peerConnections.current.forEach(({ connection }) => {
             const sender = connection.getSenders().find(s => s.track?.kind === 'video');
-            if (sender && videoTrack) {
-              sender.replaceTrack(videoTrack);
-            }
+            if (sender && videoTrack) sender.replaceTrack(videoTrack);
           });
           
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = localStream.current;
-          }
+          if (localVideoRef.current) localVideoRef.current.srcObject = localStream.current;
         }
         
         setIsScreenSharing(false);
         toast.success("Screen sharing stopped");
       } else {
-        // Start screen sharing
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-        });
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         
         screenStream.current = stream;
         const screenTrack = stream.getVideoTracks()[0];
         
-        // Replace video track in all peer connections
         peerConnections.current.forEach(({ connection }) => {
           const sender = connection.getSenders().find(s => s.track?.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(screenTrack);
-          }
+          if (sender) sender.replaceTrack(screenTrack);
         });
         
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
+        if (localVideoRef.current) localVideoRef.current.srcObject = stream;
         
-        // Handle when user stops sharing via browser UI
         screenTrack.onended = () => {
           setIsScreenSharing(false);
           if (localStream.current) {
             const videoTrack = localStream.current.getVideoTracks()[0];
             peerConnections.current.forEach(({ connection }) => {
               const sender = connection.getSenders().find(s => s.track?.kind === 'video');
-              if (sender && videoTrack) {
-                sender.replaceTrack(videoTrack);
-              }
+              if (sender && videoTrack) sender.replaceTrack(videoTrack);
             });
-            if (localVideoRef.current) {
-              localVideoRef.current.srcObject = localStream.current;
-            }
+            if (localVideoRef.current) localVideoRef.current.srcObject = localStream.current;
           }
         };
         
@@ -759,7 +709,6 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
   const endCall = async () => {
     try {
       if (sessionId) {
-        // Mark participant as inactive
         await supabase
           .from("video_call_participants")
           .update({ is_active: false, left_at: new Date().toISOString() })
@@ -775,10 +724,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           .gte("last_seen_at", staleThreshold);
 
         if (!aliveParticipantsCount || aliveParticipantsCount === 0) {
-          await supabase
-            .from("video_call_sessions")
-            .update({ is_active: false, ended_at: new Date().toISOString() })
-            .eq("id", sessionId);
+          await markSessionInactive(sessionId);
         }
       }
 
@@ -791,7 +737,8 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
   };
 
   const cleanup = () => {
-    // Stop all tracks
+    mediaReadyRef.current = false;
+
     if (localStream.current) {
       localStream.current.getTracks().forEach(track => track.stop());
       localStream.current = null;
@@ -802,11 +749,9 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
       screenStream.current = null;
     }
 
-    // Close all peer connections
     peerConnections.current.forEach(({ connection }) => connection.close());
     peerConnections.current.clear();
 
-    // Unsubscribe from signaling channel
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
@@ -815,20 +760,16 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
     setRemoteStreams(new Map());
   };
 
-  // Set ref for remote video element
-  const setRemoteVideoRef = useCallback((userId: string, el: HTMLVideoElement | null) => {
+  const setRemoteVideoRef = useCallback((peerId: string, el: HTMLVideoElement | null) => {
     if (el) {
-      remoteVideoRefs.current.set(userId, el);
-      const stream = remoteStreams.get(userId);
-      if (stream) {
-        el.srcObject = stream;
-      }
+      remoteVideoRefs.current.set(peerId, el);
+      const stream = remoteStreams.get(peerId);
+      if (stream) el.srcObject = stream;
     } else {
-      remoteVideoRefs.current.delete(userId);
+      remoteVideoRefs.current.delete(peerId);
     }
   }, [remoteStreams]);
 
-  // Calculate grid layout based on participant count
   const getGridClass = () => {
     const count = participants.length;
     if (count <= 1) return "grid-cols-1";
@@ -838,7 +779,6 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
     return "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
   };
 
-  // Get current user from participants
   const currentUser = participants.find(p => p.user_id === userId);
   const otherParticipants = participants.filter(p => p.user_id !== userId);
 
@@ -867,7 +807,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         </button>
       </div>
 
-      {/* Video Grid - WhatsApp style */}
+      {/* Video Grid */}
       <div className="flex-1 overflow-hidden p-2 bg-muted/30">
         <div className={`grid ${getGridClass()} gap-2 h-full auto-rows-fr`}>
           {/* Current user's video */}
@@ -945,7 +885,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         </div>
       </div>
 
-      {/* Participants panel (slide up on mobile) */}
+      {/* Participants panel */}
       {showParticipants && (
         <div className="absolute bottom-20 left-0 right-0 bg-card rounded-t-2xl p-4 max-h-[40vh] overflow-y-auto animate-in slide-in-from-bottom z-10 shadow-lg border-t border-border">
           <div className="text-center mb-3">
@@ -976,10 +916,9 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         </div>
       )}
 
-      {/* Chat panel (slide up on mobile) - improved styling */}
+      {/* Chat panel */}
       {showChat && (
         <div className="absolute bottom-20 left-0 right-0 bg-card rounded-t-2xl max-h-[50vh] flex flex-col animate-in slide-in-from-bottom z-10 shadow-lg border-t border-border">
-          {/* Chat header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50 rounded-t-2xl">
             <span className="text-sm font-medium text-foreground">In-call Chat</span>
             <button 
@@ -990,7 +929,6 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
             </button>
           </div>
           
-          {/* Messages list */}
           <div className="flex-1 overflow-y-auto px-4 py-2 space-y-3 min-h-[150px] max-h-[250px] bg-background/95">
             {messages.length === 0 ? (
               <div className="text-center text-muted-foreground text-sm py-4">
@@ -1023,7 +961,6 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
             <div ref={chatEndRef} />
           </div>
           
-          {/* Message input */}
           <div className="p-3 border-t border-border bg-card flex items-center gap-2">
             <Input
               value={newMessage}
@@ -1043,7 +980,7 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
         </div>
       )}
 
-      {/* Bottom control bar - WhatsApp style */}
+      {/* Bottom control bar */}
       <div className="bg-card px-4 py-3 flex items-center justify-center gap-3 sm:gap-5 shrink-0 safe-area-bottom border-t border-border">
         <button
           onClick={toggleMute}
@@ -1069,7 +1006,6 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
           {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
         </button>
 
-        {/* Chat button with unread badge */}
         <button
           onClick={() => {
             setShowChat(!showChat);

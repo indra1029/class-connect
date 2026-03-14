@@ -27,40 +27,24 @@ const Analytics = () => {
 
   const fetchAnalytics = async () => {
     try {
-      const { data: userClasses } = await supabase
-        .from("class_members")
-        .select("class_id")
-        .eq("user_id", (await supabase.auth.getUser()).data.user?.id || "");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-      if (!userClasses) return;
-
-      const classIds = userClasses.map((c) => c.class_id);
-
-      const promises = classIds.map(async (classId) => {
-        const [classData, memberCount, messageCount] = await Promise.all([
-          supabase.from("classes").select("name").eq("id", classId).single(),
-          supabase.from("class_members").select("*", { count: "exact" }).eq("class_id", classId),
-          supabase.from("messages").select("*", { count: "exact" }).eq("class_id", classId),
-        ]);
-
-        const { data: lastMessage } = await supabase
-          .from("messages")
-          .select("created_at")
-          .eq("class_id", classId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
-
-        return {
-          class_id: classId,
-          class_name: classData.data?.name || "Unknown",
-          member_count: memberCount.count || 0,
-          message_count: messageCount.count || 0,
-          last_message_at: lastMessage?.created_at || null,
-        };
+      // Use the optimized RPC function instead of N+1 queries
+      const { data, error } = await supabase.rpc("get_class_analytics_for_member", {
+        _user_id: user.id,
       });
 
-      const results = await Promise.all(promises);
+      if (error) throw error;
+
+      const results: ClassStat[] = (data || []).map((row: any) => ({
+        class_id: row.class_id,
+        class_name: row.class_name,
+        member_count: row.member_count,
+        message_count: row.message_count,
+        last_message_at: row.last_message_at,
+      }));
+
       setStats(results);
       setTotalMembers(results.reduce((sum, s) => sum + s.member_count, 0));
       setTotalMessages(results.reduce((sum, s) => sum + s.message_count, 0));
@@ -132,59 +116,65 @@ const Analytics = () => {
           </Card>
         </div>
 
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Class Activity Overview</CardTitle>
-            <CardDescription>Messages and members per class</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="messages" fill="hsl(var(--primary))" name="Messages" />
-                <Bar dataKey="members" fill="hsl(var(--secondary))" name="Members" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        {chartData.length > 0 && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>Class Activity Overview</CardTitle>
+              <CardDescription>Messages and members per class</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="messages" fill="hsl(var(--primary))" name="Messages" />
+                  <Bar dataKey="members" fill="hsl(var(--accent))" name="Members" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
             <CardTitle>Class Details</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {stats.map((stat) => (
-                <div
-                  key={stat.class_id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer"
-                  onClick={() => navigate(`/class/${stat.class_id}`)}
-                >
-                  <div>
-                    <div className="font-semibold">{stat.class_name}</div>
-                    <div className="text-sm text-muted-foreground flex items-center gap-4 mt-1">
-                      <span className="flex items-center gap-1">
-                        <Users className="w-3 h-3" />
-                        {stat.member_count} members
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <MessageSquare className="w-3 h-3" />
-                        {stat.message_count} messages
-                      </span>
-                      {stat.last_message_at && (
+            {stats.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No class data available yet.</p>
+            ) : (
+              <div className="space-y-4">
+                {stats.map((stat) => (
+                  <div
+                    key={stat.class_id}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/class/${stat.class_id}`)}
+                  >
+                    <div>
+                      <div className="font-semibold">{stat.class_name}</div>
+                      <div className="text-sm text-muted-foreground flex items-center gap-4 mt-1 flex-wrap">
                         <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {new Date(stat.last_message_at).toLocaleDateString()}
+                          <Users className="w-3 h-3" />
+                          {stat.member_count} members
                         </span>
-                      )}
+                        <span className="flex items-center gap-1">
+                          <MessageSquare className="w-3 h-3" />
+                          {stat.message_count} messages
+                        </span>
+                        {stat.last_message_at && (
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {new Date(stat.last_message_at).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </main>
