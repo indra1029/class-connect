@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
@@ -9,7 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Send, Users, Copy, Check, Paperclip, Trash2, UserCircle, Video, Smile, MessageSquare, Megaphone, Presentation, BarChart3, Calendar as CalendarIcon, Pin } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ClassMembers } from "@/components/ClassMembers";
-import VideoCall from "@/components/VideoCall";
 import MultiUserVideoCall from "@/components/MultiUserVideoCall";
 import EmojiPicker from "@/components/EmojiPicker";
 import { SecureFileLink } from "@/components/SecureFileLink";
@@ -67,6 +66,9 @@ const ClassRoom = () => {
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Use ref to avoid stale closures in subscription callbacks
+  const showVideoCallRef = useRef(showVideoCall);
+  showVideoCallRef.current = showVideoCall;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -81,7 +83,6 @@ const ClassRoom = () => {
   useEffect(() => {
     const joinCallId = searchParams.get('joinCall');
     if (joinCallId && user) {
-      // Check if call is still active
       supabase
         .from("video_call_sessions")
         .select("is_active")
@@ -103,7 +104,6 @@ const ClassRoom = () => {
               description: "This video call has already ended",
             });
           }
-          // Clear the joinCall param
           const next = new URLSearchParams(searchParams);
           next.delete('joinCall');
           setSearchParams(next, { replace: true });
@@ -144,9 +144,9 @@ const ClassRoom = () => {
     }
   };
 
-  const checkActiveCall = async () => {
+  const checkActiveCall = useCallback(async () => {
     try {
-      if (showVideoCall || !classId) return;
+      if (showVideoCallRef.current || !classId || !user) return;
 
       const { data: sessions, error } = await supabase
         .from("video_call_sessions")
@@ -154,7 +154,7 @@ const ClassRoom = () => {
         .eq("class_id", classId)
         .eq("is_active", true)
         .order("started_at", { ascending: false })
-        .limit(10);
+        .limit(5);
 
       if (error) throw error;
 
@@ -175,7 +175,11 @@ const ClassRoom = () => {
           .gte("last_seen_at", staleThreshold);
 
         if ((count ?? 0) > 0) {
-          if (session.started_by === user!.id) break;
+          // Don't show banner for calls the current user started
+          if (session.started_by === user!.id) {
+            nextActiveCall = null;
+            break;
+          }
 
           const { data: starterProfile } = await supabase
             .from("profiles")
@@ -192,6 +196,7 @@ const ClassRoom = () => {
           break;
         }
 
+        // Stale session - mark inactive
         await supabase
           .from("video_call_sessions")
           .update({ is_active: false, ended_at: new Date().toISOString() })
@@ -204,10 +209,9 @@ const ClassRoom = () => {
       console.error("Error checking active call:", error);
       setActiveCall(null);
     }
-  };
+  }, [classId, user]);
 
-  // Subscribe to video call session changes
-  const subscribeToActiveCalls = () => {
+  const subscribeToActiveCalls = useCallback(() => {
     const channel = supabase
       .channel(`video-sessions-${classId}`)
       .on(
@@ -219,8 +223,7 @@ const ClassRoom = () => {
           filter: `class_id=eq.${classId}`,
         },
         () => {
-          // Re-check active call status when sessions change
-          if (!showVideoCall) {
+          if (!showVideoCallRef.current) {
             checkActiveCall();
           }
         }
@@ -233,8 +236,7 @@ const ClassRoom = () => {
           table: "video_call_participants",
         },
         () => {
-          // Update participant count when participants change
-          if (!showVideoCall) {
+          if (!showVideoCallRef.current) {
             checkActiveCall();
           }
         }
@@ -244,9 +246,8 @@ const ClassRoom = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  };
+  }, [classId, checkActiveCall]);
 
-  // Handle joining active call
   const handleJoinActiveCall = () => {
     if (activeCall) {
       setJoinCallSessionId(activeCall.id);
@@ -294,8 +295,12 @@ const ClassRoom = () => {
 
       if (messagesError) throw messagesError;
 
-      // Fetch profiles for all messages
       const userIds = [...new Set(messagesData?.map(m => m.user_id) || [])];
+      if (userIds.length === 0) {
+        setMessages([]);
+        return;
+      }
+
       const { data: profilesData } = await supabase
         .from("profiles")
         .select("id, full_name, avatar_url")
@@ -320,7 +325,7 @@ const ClassRoom = () => {
 
   const subscribeToMessages = () => {
     const channel = supabase
-      .channel("messages")
+      .channel(`class-messages-${classId}`)
       .on(
         "postgres_changes",
         {
@@ -404,7 +409,6 @@ const ClassRoom = () => {
 
       const file = e.target.files[0];
 
-      // Validate file
       fileSchema.parse({
         name: file.name,
         size: file.size,
@@ -414,7 +418,6 @@ const ClassRoom = () => {
       const fileExt = file.name.split(".").pop()?.toLowerCase();
       const fileName = `${classId}/${user!.id}/${Math.random()}.${fileExt}`;
 
-      // Check if it's a presentation file
       const presentationTypes = ['pdf', 'ppt', 'pptx', 'doc', 'docx'];
       const isPresentationFile = presentationTypes.includes(fileExt || '');
 
@@ -424,15 +427,13 @@ const ClassRoom = () => {
 
       if (uploadError) throw uploadError;
 
-      // Store the file path (not public URL) for later signed URL generation
       if (isPresentationFile) {
-        // Add to presentations table for admin
         const { error: presentationError } = await supabase
           .from("presentations")
           .insert({
             class_id: classId,
             user_id: user!.id,
-            file_url: fileName, // Store path, not URL
+            file_url: fileName,
             file_name: file.name,
             is_active: false,
           });
@@ -444,14 +445,13 @@ const ClassRoom = () => {
           description: "Presentation uploaded to Presentations tab",
         });
       } else {
-        // Regular file - add to messages
         const { error } = await supabase
           .from("messages")
           .insert({
             class_id: classId,
             user_id: user!.id,
             content: file.name,
-            file_url: fileName, // Store path, not URL
+            file_url: fileName,
             file_type: file.type,
             file_name: file.name,
           });
@@ -520,17 +520,14 @@ const ClassRoom = () => {
       <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-10 shadow-sm safe-area-top">
         <div className="w-full px-2 sm:px-4 py-2 max-w-full overflow-hidden">
           <div className="flex items-center gap-2">
-            {/* Back button */}
             <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")} className="shrink-0 h-8 w-8 p-0">
               <ArrowLeft className="w-4 h-4" />
             </Button>
             
-            {/* Class name - truncated */}
             <div className="min-w-0 flex-1">
               <h1 className="text-sm sm:text-base font-semibold text-foreground truncate">{classData?.name}</h1>
             </div>
             
-            {/* Action buttons - fixed width */}
             <div className="flex items-center gap-1 shrink-0">
               <Button 
                 variant={showVideoCall ? "default" : "outline"} 
@@ -564,13 +561,15 @@ const ClassRoom = () => {
         </div>
       </header>
 
-      {/* Active Call Banner - Show when someone else started a call */}
+      {/* Active Call Banner */}
       {activeCall && !showVideoCall && (
-        <div className="bg-primary/10 border-b border-primary/20 px-3 py-2 animate-pulse">
+        <div className="bg-primary/10 border-b border-primary/20 px-3 py-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0 relative">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-ping" />
-              <div className="w-2 h-2 bg-green-500 rounded-full absolute left-0" />
+              <span className="relative flex h-3 w-3 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-accent"></span>
+              </span>
               <span className="text-xs sm:text-sm text-foreground truncate">
                 <span className="font-medium">{activeCall.starter_name}</span> started a video call
                 {activeCall.participant_count > 1 && (
@@ -582,7 +581,7 @@ const ClassRoom = () => {
               <Button 
                 size="sm" 
                 onClick={handleJoinActiveCall}
-                className="h-7 px-3 text-xs bg-green-600 hover:bg-green-700 text-white"
+                className="h-7 px-3 text-xs bg-accent hover:bg-accent/90 text-accent-foreground"
               >
                 <Video className="w-3 h-3 mr-1" />
                 Join
@@ -609,7 +608,6 @@ const ClassRoom = () => {
         
         <div className="flex-1 flex flex-col min-w-0 min-h-0 max-w-full overflow-hidden">
           <Tabs defaultValue="chat" className="flex-1 flex flex-col min-h-0 w-full max-w-full">
-            {/* Mobile-friendly tabs: wrap into rows (no horizontal page scroll) */}
             <div className="w-full mb-2 shrink-0">
               <TabsList className="flex w-full flex-wrap gap-1 bg-muted/50 p-1 rounded-lg">
                 <TabsTrigger value="chat" className="flex basis-[calc(33.333%-0.25rem)] flex-1 items-center justify-center gap-1 px-2 py-2 text-xs rounded-md data-[state=active]:bg-background">
@@ -661,7 +659,7 @@ const ClassRoom = () => {
                       >
                         <Avatar className="w-7 h-7 sm:w-8 sm:h-8 flex-shrink-0">
                           <AvatarImage src={message.profiles.avatar_url || ""} />
-                          <AvatarFallback className="bg-gradient-hero text-white text-[10px] sm:text-xs">
+                          <AvatarFallback className="bg-gradient-hero text-primary-foreground text-[10px] sm:text-xs">
                             {message.profiles.full_name.charAt(0).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
