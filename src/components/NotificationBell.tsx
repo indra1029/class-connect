@@ -45,8 +45,8 @@ const NotificationBell = ({ userId }: { userId: string }) => {
           setNotifications((prev) => [newNotif, ...prev]);
           setUnreadCount((prev) => prev + 1);
           
-          if (Notification.permission === "granted") {
-            new Notification(newNotif.title, {
+          if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === "granted") {
+            new window.Notification(newNotif.title, {
               body: newNotif.message,
               icon: "/favicon.ico",
             });
