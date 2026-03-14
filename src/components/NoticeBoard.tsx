@@ -54,7 +54,10 @@ export const NoticeBoard = ({ classId, isAdmin }: NoticeBoardProps) => {
 
   useEffect(() => {
     fetchNoticeBoard();
-    subscribeToNoticeBoard();
+    const unsubscribe = subscribeToNoticeBoard();
+    return () => {
+      unsubscribe?.();
+    };
   }, [classId]);
 
   const fetchNoticeBoard = async () => {

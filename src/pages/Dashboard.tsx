@@ -82,13 +82,28 @@ const Dashboard = () => {
 
   const fetchClasses = async () => {
     try {
-      const { data, error } = await supabase
-        .from("classes")
-        .select("*")
-        .order("created_at", { ascending: false });
+      // Only fetch classes the user is a member of
+      const { data: memberData, error: memberError } = await supabase
+        .from("class_members")
+        .select("class_id")
+        .eq("user_id", user!.id);
 
-      if (error) throw error;
-      setClasses(data || []);
+      if (memberError) throw memberError;
+
+      const classIds = memberData?.map(m => m.class_id) || [];
+
+      if (classIds.length === 0) {
+        setClasses([]);
+      } else {
+        const { data, error } = await supabase
+          .from("classes")
+          .select("*")
+          .in("id", classIds)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        setClasses(data || []);
+      }
 
       // Check if current user has created a class
       if (user) {

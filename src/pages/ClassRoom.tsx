@@ -12,6 +12,7 @@ import { ClassMembers } from "@/components/ClassMembers";
 import VideoCall from "@/components/VideoCall";
 import MultiUserVideoCall from "@/components/MultiUserVideoCall";
 import EmojiPicker from "@/components/EmojiPicker";
+import { SecureFileLink } from "@/components/SecureFileLink";
 import { Announcements } from "@/components/Announcements";
 import { PresentationViewer } from "@/components/PresentationViewer";
 import { Polls } from "@/components/Polls";
@@ -125,7 +126,7 @@ const ClassRoom = () => {
       unsubscribeMessages?.();
       unsubscribeActiveCalls?.();
     };
-  }, [user, classId, showVideoCall]);
+  }, [user, classId]);
 
   const checkAdminStatus = async () => {
     try {
@@ -567,9 +568,9 @@ const ClassRoom = () => {
       {activeCall && !showVideoCall && (
         <div className="bg-primary/10 border-b border-primary/20 px-3 py-2 animate-pulse">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 relative">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-ping" />
-              <div className="w-2 h-2 bg-green-500 rounded-full absolute" />
+              <div className="w-2 h-2 bg-green-500 rounded-full absolute left-0" />
               <span className="text-xs sm:text-sm text-foreground truncate">
                 <span className="font-medium">{activeCall.starter_name}</span> started a video call
                 {activeCall.participant_count > 1 && (
@@ -677,17 +678,11 @@ const ClassRoom = () => {
                               }`}
                             >
                               {message.file_url ? (
-                                <a
-                                  href={message.file_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="underline flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm"
-                                >
-                                  <Paperclip className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                  <span className="truncate max-w-[150px] sm:max-w-none">
-                                    {message.file_name || message.content}
-                                  </span>
-                                </a>
+                                <SecureFileLink
+                                  fileUrl={message.file_url}
+                                  fileName={message.file_name || message.content}
+                                  className="p-2 bg-transparent border-0 hover:bg-transparent"
+                                />
                               ) : (
                                 <p className="text-xs sm:text-sm break-words">{message.content}</p>
                               )}

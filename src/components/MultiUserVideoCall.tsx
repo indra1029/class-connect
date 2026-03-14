@@ -64,11 +64,11 @@ const MultiUserVideoCall = ({ classId, userId, sessionIdOverride, onClose }: Mul
   const screenStream = useRef<MediaStream | null>(null);
   const peerConnections = useRef<Map<string, PeerData>>(new Map());
   const callStartTime = useRef<number>(Date.now());
-  const durationInterval = useRef<NodeJS.Timeout | null>(null);
+  const durationInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const channelRef = useRef<any>(null);
   const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const participantUnsubRef = useRef<null | (() => void)>(null);
-  const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+  const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     initializeCall();
