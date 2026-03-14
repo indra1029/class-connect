@@ -60,8 +60,8 @@ const NotificationBell = ({ userId }: { userId: string }) => {
       )
       .subscribe();
 
-    if (Notification.permission === "default") {
-      Notification.requestPermission();
+    if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === "default") {
+      window.Notification.requestPermission();
     }
 
     return () => {
