@@ -59,3 +59,46 @@ export const iceServers: RTCConfiguration = {
   ],
   iceCandidatePoolSize: 10,
 };
+
+/**
+ * Creates a peer connection with proper ICE candidate queuing.
+ * Candidates that arrive before remote description is set are queued
+ * and flushed once the description is applied.
+ */
+export class ManagedPeerConnection {
+  public pc: RTCPeerConnection;
+  private candidateQueue: RTCIceCandidateInit[] = [];
+  private remoteDescriptionSet = false;
+
+  constructor(config?: RTCConfiguration) {
+    this.pc = new RTCPeerConnection(config || iceServers);
+  }
+
+  async setRemoteDescription(desc: RTCSessionDescriptionInit) {
+    await this.pc.setRemoteDescription(new RTCSessionDescription(desc));
+    this.remoteDescriptionSet = true;
+    // Flush queued candidates
+    for (const candidate of this.candidateQueue) {
+      try {
+        await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn("Failed to add queued ICE candidate:", e);
+      }
+    }
+    this.candidateQueue = [];
+  }
+
+  async addIceCandidate(candidate: RTCIceCandidateInit) {
+    if (this.remoteDescriptionSet) {
+      await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } else {
+      this.candidateQueue.push(candidate);
+    }
+  }
+
+  close() {
+    this.candidateQueue = [];
+    this.remoteDescriptionSet = false;
+    this.pc.close();
+  }
+}
