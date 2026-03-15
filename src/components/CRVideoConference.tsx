@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { iceServers, isScreenShareSupported } from "@/lib/webrtc";
+import { iceServers, isScreenShareSupported, ManagedPeerConnection } from "@/lib/webrtc";
 import {
   Maximize,
   Minimize,
@@ -40,6 +40,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [remoteStreamState, setRemoteStreamState] = useState(0); // counter to trigger re-renders
   const isMobile = useIsMobile();
   const canScreenShare = !isMobile && isScreenShareSupported();
   const videoContainerRef = useRef<HTMLDivElement>(null);
@@ -48,26 +49,35 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   const screenStreamRef = useRef<MediaStream | null>(null);
 
   const channelRef = useRef<any>(null);
-  const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const peerConnections = useRef<Map<string, ManagedPeerConnection>>(new Map());
   const remoteStreams = useRef<Map<string, MediaStream>>(new Map());
   const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mediaReadyRef = useRef(false);
 
   useEffect(() => {
-    initializeMedia();
-    joinSession();
+    let cleanedUp = false;
+
+    const init = async () => {
+      await initializeMedia();
+      if (cleanedUp) return;
+      await joinSession();
+      if (cleanedUp) return;
+      setupSignaling();
+      startHeartbeat();
+    };
+
     const unsub = subscribeToParticipants();
-    setupSignaling();
-    startHeartbeat();
+    init();
 
     return () => {
+      cleanedUp = true;
       unsub?.();
       cleanup();
       if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
     };
   }, [sessionId]);
 
-  // Heartbeat to mark user as alive every 5s
   const startHeartbeat = () => {
     if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
     heartbeatInterval.current = setInterval(async () => {
@@ -94,6 +104,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
       });
 
       localStreamRef.current = stream;
+      mediaReadyRef.current = true;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
@@ -109,7 +120,6 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
 
   const joinSession = async () => {
     try {
-      // Avoid duplicate row errors if the user re-joins.
       const { data: existing } = await supabase
         .from("cr_video_participants")
         .select("id")
@@ -120,7 +130,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
       if (existing?.id) {
         const { error } = await supabase
           .from("cr_video_participants")
-          .update({ is_active: true, joined_at: new Date().toISOString(), left_at: null })
+          .update({ is_active: true, joined_at: new Date().toISOString(), left_at: null, last_seen_at: new Date().toISOString() })
           .eq("id", existing.id);
         if (error) throw error;
       } else {
@@ -161,15 +171,19 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
     };
   };
 
-  // --- WebRTC signaling (CR room) ---
   const setupSignaling = () => {
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
     const channel = supabase.channel(`cr-webrtc-${sessionId}`, {
       config: { broadcast: { self: false } },
     });
 
     channel
       .on("broadcast", { event: "offer" }, async ({ payload }) => {
-        if (payload.to === user.id) await handleOffer(payload);
+        if (payload.to === user.id && mediaReadyRef.current) await handleOffer(payload);
       })
       .on("broadcast", { event: "answer" }, async ({ payload }) => {
         if (payload.to === user.id) await handleAnswer(payload);
@@ -178,21 +192,22 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
         if (payload.to === user.id) await handleIceCandidate(payload);
       })
       .on("broadcast", { event: "user-joined" }, async ({ payload }) => {
-        if (!localStreamRef.current) return;
+        if (!mediaReadyRef.current) return;
         if (payload.userId === user.id) return;
-        // Polite peer: smaller ID initiates
         const shouldCreateOffer = user.id < payload.userId;
         if (shouldCreateOffer) {
-          await createOffer(payload.userId);
+          setTimeout(() => createOffer(payload.userId), 600);
         }
       })
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          channel.send({
-            type: "broadcast",
-            event: "user-joined",
-            payload: { userId: user.id },
-          });
+          setTimeout(() => {
+            channel.send({
+              type: "broadcast",
+              event: "user-joined",
+              payload: { userId: user.id },
+            });
+          }, 600);
         }
       });
 
@@ -206,9 +221,9 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
       peerConnections.current.delete(peerId);
     }
 
-    const pc = new RTCPeerConnection(iceServers);
+    const managed = new ManagedPeerConnection(iceServers);
+    const pc = managed.pc;
 
-    // Add tracks
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((t) => pc.addTrack(t, localStreamRef.current!));
     }
@@ -216,12 +231,10 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
     pc.ontrack = (event) => {
       const [stream] = event.streams;
       if (!stream) return;
-      console.log("CR: Received track from", peerId, "kind:", event.track.kind);
       remoteStreams.current.set(peerId, stream);
       const el = remoteVideoRefs.current.get(peerId);
       if (el) el.srcObject = stream;
-      // Force re-render to show the stream
-      setParticipants(prev => [...prev]);
+      setRemoteStreamState(prev => prev + 1);
     };
 
     pc.onicecandidate = (event) => {
@@ -237,48 +250,44 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
       });
     };
 
-    // ICE connection state handling
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState;
-      console.log(`CR ICE state with ${peerId}:`, state);
       if (state === "failed") {
-        console.log("CR ICE failed, attempting restart for:", peerId);
         pc.restartIce();
       }
     };
 
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
-      console.log(`CR connection state with ${peerId}:`, state);
       if (state === "failed") {
         remoteStreams.current.delete(peerId);
-        // Retry connection after a short delay
+        setRemoteStreamState(prev => prev + 1);
         setTimeout(() => {
-          const shouldCreateOffer = user.id < peerId;
-          if (shouldCreateOffer && localStreamRef.current) {
+          if (user.id < peerId && mediaReadyRef.current) {
             createOffer(peerId);
           }
-        }, 2000);
-      } else if (state === "disconnected") {
-        // Wait for potential auto-reconnection
-        console.log("CR: Connection disconnected with:", peerId);
+        }, 3000);
       }
     };
 
-    peerConnections.current.set(peerId, pc);
-    return pc;
+    peerConnections.current.set(peerId, managed);
+    return managed;
   };
 
   const createOffer = async (peerId: string) => {
     try {
-      const pc = createPeerConnection(peerId);
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      if (!mediaReadyRef.current) return;
+      const managed = createPeerConnection(peerId);
+      const offer = await managed.pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+      });
+      await managed.pc.setLocalDescription(offer);
       channelRef.current?.send({
         type: "broadcast",
         event: "offer",
         payload: {
-          offer: pc.localDescription?.toJSON(),
+          offer: managed.pc.localDescription?.toJSON(),
           to: peerId,
           from: user.id,
         },
@@ -290,15 +299,15 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
 
   const handleOffer = async (payload: { offer: RTCSessionDescriptionInit; from: string }) => {
     try {
-      const pc = createPeerConnection(payload.from);
-      await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+      const managed = createPeerConnection(payload.from);
+      await managed.setRemoteDescription(payload.offer);
+      const answer = await managed.pc.createAnswer();
+      await managed.pc.setLocalDescription(answer);
       channelRef.current?.send({
         type: "broadcast",
         event: "answer",
         payload: {
-          answer: pc.localDescription?.toJSON(),
+          answer: managed.pc.localDescription?.toJSON(),
           to: payload.from,
           from: user.id,
         },
@@ -310,9 +319,9 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
 
   const handleAnswer = async (payload: { answer: RTCSessionDescriptionInit; from: string }) => {
     try {
-      const pc = peerConnections.current.get(payload.from);
-      if (!pc) return;
-      await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
+      const managed = peerConnections.current.get(payload.from);
+      if (!managed) return;
+      await managed.setRemoteDescription(payload.answer);
     } catch (e) {
       console.error("CR handleAnswer error", e);
     }
@@ -320,9 +329,9 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
 
   const handleIceCandidate = async (payload: { candidate: RTCIceCandidateInit; from: string }) => {
     try {
-      const pc = peerConnections.current.get(payload.from);
-      if (!pc) return;
-      await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+      const managed = peerConnections.current.get(payload.from);
+      if (!managed) return;
+      await managed.addIceCandidate(payload.candidate);
     } catch (e) {
       console.error("CR handleIceCandidate error", e);
     }
@@ -340,7 +349,6 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
 
   const fetchParticipants = async () => {
     try {
-      // Filter out stale participants (not seen in 15 seconds)
       const staleThreshold = new Date(Date.now() - 15000).toISOString();
 
       const { data: participantsData, error: participantsError } = await supabase
@@ -378,8 +386,8 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
 
       setParticipants(participantsList);
 
-      // Connect to existing participants (multi-user)
-      if (localStreamRef.current) {
+      // Connect to existing participants
+      if (mediaReadyRef.current) {
         const others = participantsList.filter((p) => p.user_id !== user.id);
         for (const p of others) {
           if (!peerConnections.current.has(p.user_id)) {
@@ -435,8 +443,8 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
     if (!nextTrack) return;
 
     const replacePromises: Promise<void>[] = [];
-    peerConnections.current.forEach((pc) => {
-      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+    peerConnections.current.forEach((managed) => {
+      const sender = managed.pc.getSenders().find((s) => s.track?.kind === "video");
       if (sender) {
         replacePromises.push(sender.replaceTrack(nextTrack));
       }
@@ -446,15 +454,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   };
 
   const toggleScreenShare = async () => {
-    if (isMobile) {
-      toast({
-        variant: "destructive",
-        title: "Not Supported",
-        description: "Screen sharing is not supported on mobile devices",
-      });
-      return;
-    }
-    if (!canScreenShare) {
+    if (isMobile || !canScreenShare) {
       toast({
         variant: "destructive",
         title: "Not Supported",
@@ -493,17 +493,9 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
     } catch (error: any) {
       console.error("Screen share error:", error);
       if (error.name === "NotAllowedError") {
-        toast({
-          variant: "destructive",
-          title: "Cancelled",
-          description: "Screen sharing was cancelled",
-        });
+        toast({ variant: "destructive", title: "Cancelled", description: "Screen sharing was cancelled" });
       } else {
-        toast({
-          variant: "destructive",
-          title: "Screen Share Error",
-          description: "Failed to start screen sharing",
-        });
+        toast({ variant: "destructive", title: "Screen Share Error", description: "Failed to start screen sharing" });
       }
     }
   };
@@ -556,16 +548,18 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   };
 
   const cleanup = () => {
-    // Stop tracks
+    mediaReadyRef.current = false;
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
     }
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach((track) => track.stop());
+      screenStreamRef.current = null;
     }
 
-    // Close webrtc
-    peerConnections.current.forEach((pc) => pc.close());
+    peerConnections.current.forEach((managed) => managed.close());
     peerConnections.current.clear();
     remoteStreams.current.clear();
 
@@ -578,19 +572,28 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
   return (
     <div
       ref={videoContainerRef}
-      className="fixed inset-0 bg-black z-50 flex flex-col"
+      className="fixed inset-0 bg-background z-50 flex flex-col"
     >
       {/* Video Grid */}
-      <div className="flex-1 relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-4">
+      <div className="flex-1 relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-4 auto-rows-fr">
         {/* Local Video */}
-        <div className="relative bg-muted rounded-lg overflow-hidden">
+        <div className="relative bg-muted rounded-xl overflow-hidden border-2 border-primary/60 min-h-[120px]">
           <video
             ref={localVideoRef}
             autoPlay
             playsInline
             muted
-            className="w-full h-full object-cover"
+            className={`w-full h-full object-cover ${isVideoOff ? 'hidden' : ''}`}
           />
+          {isVideoOff && (
+            <div className="absolute inset-0 flex items-center justify-center bg-muted">
+              <Avatar className="w-20 h-20">
+                <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
+                  You
+                </AvatarFallback>
+              </Avatar>
+            </div>
+          )}
           <div className="absolute bottom-2 left-2 bg-primary/80 px-3 py-1 rounded-full text-primary-foreground text-sm">
             You {isScreenSharing && "(Sharing Screen)"}
           </div>
@@ -604,7 +607,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
             return (
               <div
                 key={participant.user_id}
-                className="relative bg-muted rounded-lg overflow-hidden flex items-center justify-center"
+                className="relative bg-muted rounded-xl overflow-hidden flex items-center justify-center border-2 border-accent/40 min-h-[120px]"
               >
                 {hasStream ? (
                   <video
@@ -615,9 +618,9 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
                   />
                 ) : (
                   <>
-                    <Avatar className="w-24 h-24">
+                    <Avatar className="w-20 h-20">
                       <AvatarImage src={participant.avatar_url || ""} />
-                      <AvatarFallback className="bg-primary text-primary-foreground text-3xl">
+                      <AvatarFallback className="bg-accent text-accent-foreground text-2xl">
                         {participant.full_name.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
@@ -637,7 +640,6 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
       {/* Controls */}
       <Card className="m-4 p-4 bg-card/95 backdrop-blur">
         <div className="flex items-center justify-between gap-4">
-          {/* Participant Count */}
           <div className="flex items-center gap-2 text-muted-foreground">
             <Users className="w-5 h-5" />
             <span className="text-sm font-medium">
@@ -645,7 +647,6 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
             </span>
           </div>
 
-          {/* Control Buttons */}
           <div className="flex items-center gap-2">
             <Button
               variant={isMuted ? "destructive" : "secondary"}
@@ -695,7 +696,7 @@ const CRVideoConference = ({ sessionId, user, onClose }: CRVideoConferenceProps)
             </Button>
           </div>
 
-          <div className="w-24" /> {/* Spacer for balance */}
+          <div className="w-24" />
         </div>
       </Card>
     </div>
